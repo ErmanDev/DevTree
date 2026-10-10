@@ -37,6 +37,8 @@ pub async fn run(dir: &Path, args: &[&str], timeout: Duration) -> Result<GitOutp
         // Never block on an interactive username/password prompt: there is no TTY.
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
+        // `--continue` steps would otherwise open an editor for the commit message.
+        .env("GIT_EDITOR", "true")
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -197,6 +199,7 @@ fn short_ref(full: &str) -> String {
 
 #[derive(Debug, Default, Serialize)]
 pub struct Status {
+    pub operation: Option<Operation>,
     pub branch: Option<String>,
     pub head: Option<String>,
     pub upstream: Option<String>,
@@ -218,8 +221,68 @@ pub struct FileStatus {
 }
 
 pub async fn status(dir: &Path) -> Result<Status, String> {
-    let text = run_ok(dir, &["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"]).await?;
-    Ok(parse_status(&text))
+    let (text, git_dir) = tokio::try_join!(
+        run_ok(dir, &["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"]),
+        run_ok(dir, &["rev-parse", "--absolute-git-dir"]),
+    )?;
+    let mut st = parse_status(&text);
+    st.operation = operation(Path::new(git_dir.trim()));
+    Ok(st)
+}
+
+/// A multi-step operation git has paused, usually because of conflicts.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Operation {
+    /// "merge" | "rebase" | "cherry-pick" | "revert" | "am"
+    pub kind: &'static str,
+    /// Branch being rebased.
+    pub head_name: Option<String>,
+    /// Commit being rebased onto.
+    pub onto: Option<String>,
+    /// Commit being merged / picked / reverted.
+    pub incoming: Option<String>,
+    pub step: Option<u32>,
+    pub total: Option<u32>,
+}
+
+impl Operation {
+    pub fn can_skip(&self) -> bool {
+        self.kind != "merge"
+    }
+}
+
+pub fn operation(git_dir: &Path) -> Option<Operation> {
+    let read = |p: &str| std::fs::read_to_string(git_dir.join(p)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let num = |p: &str| read(p).and_then(|s| s.parse().ok());
+    let blank = |kind| Operation { kind, head_name: None, onto: None, incoming: None, step: None, total: None };
+
+    if git_dir.join("rebase-merge").is_dir() {
+        return Some(Operation {
+            head_name: read("rebase-merge/head-name").map(|h| short_ref(&h)),
+            onto: read("rebase-merge/onto"),
+            incoming: read("REBASE_HEAD"),
+            step: num("rebase-merge/msgnum"),
+            total: num("rebase-merge/end"),
+            ..blank("rebase")
+        });
+    }
+    if git_dir.join("rebase-apply").is_dir() {
+        let am = git_dir.join("rebase-apply/applying").exists();
+        return Some(Operation {
+            head_name: read("rebase-apply/head-name").map(|h| short_ref(&h)),
+            onto: read("rebase-apply/onto"),
+            incoming: read("REBASE_HEAD"),
+            step: num("rebase-apply/next"),
+            total: num("rebase-apply/last"),
+            ..blank(if am { "am" } else { "rebase" })
+        });
+    }
+    for (file, kind) in [("MERGE_HEAD", "merge"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert")] {
+        if let Some(head) = read(file) {
+            return Some(Operation { incoming: head.lines().next().map(str::to_string), ..blank(kind) });
+        }
+    }
+    None
 }
 
 fn parse_status(text: &str) -> Status {
@@ -334,6 +397,32 @@ pub async fn branches(dir: &Path) -> Result<Vec<Branch>, String> {
         });
     }
     Ok(out)
+}
+
+#[derive(Debug, Serialize)]
+pub struct Stash {
+    pub index: u32,
+    pub sha: String,
+    pub message: String,
+    pub time: i64,
+}
+
+pub async fn stashes(dir: &Path) -> Result<Vec<Stash>, String> {
+    let text = run_ok(dir, &["stash", "list", "--format=%gd%x1f%H%x1f%gs%x1f%ct"]).await?;
+    Ok(text
+        .lines()
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split(FIELD).collect();
+            let index = f.first()?.strip_prefix("stash@{")?.strip_suffix('}')?.parse().ok()?;
+            Some(Stash { index, sha: f.get(1)?.to_string(), message: f.get(2)?.to_string(), time: f.get(3)?.parse().unwrap_or(0) })
+        })
+        .collect())
+}
+
+/// Picks the remote to use when none is given: `origin` if present, else the first one.
+pub async fn default_remote(dir: &Path) -> Result<Option<String>, String> {
+    let remotes = remotes(dir).await?;
+    Ok(remotes.iter().find(|r| *r == "origin").or(remotes.first()).cloned())
 }
 
 pub async fn remotes(dir: &Path) -> Result<Vec<String>, String> {
@@ -478,5 +567,82 @@ mod tests {
         assert_eq!(files[1].status, "R");
         assert_eq!(files[1].path, "new.txt");
         assert_eq!(files[1].orig_path.as_deref(), Some("old.txt"));
+    }
+
+    /// Creates a throwaway repository and runs shell-free git commands in it.
+    struct TempRepo(std::path::PathBuf);
+
+    impl TempRepo {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("devtree-test-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let r = TempRepo(dir);
+            r.git(&["init", "-q", "-b", "main"]);
+            r.git(&["config", "user.name", "Test"]);
+            r.git(&["config", "user.email", "t@example.com"]);
+            r
+        }
+        fn git(&self, args: &[&str]) -> bool {
+            std::process::Command::new("git").arg("-C").arg(&self.0).args(args).output().unwrap().status.success()
+        }
+        fn commit(&self, file: &str, text: &str, msg: &str) {
+            std::fs::write(self.0.join(file), text).unwrap();
+            assert!(self.git(&["add", "-A"]));
+            assert!(self.git(&["commit", "-q", "-m", msg]));
+        }
+        /// main and `other` both change the same line of a.txt.
+        fn diverged(name: &str) -> Self {
+            let r = TempRepo::new(name);
+            r.commit("a.txt", "one\n", "base");
+            r.git(&["switch", "-q", "-c", "other"]);
+            r.commit("a.txt", "theirs\n", "theirs");
+            r.git(&["switch", "-q", "main"]);
+            r.commit("a.txt", "ours\n", "ours");
+            r
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn detects_merge_conflict() {
+        let r = TempRepo::diverged("merge");
+        assert!(status(&r.0).await.unwrap().operation.is_none());
+        assert!(!r.git(&["merge", "other"]));
+        let st = status(&r.0).await.unwrap();
+        let op = st.operation.expect("merge in progress");
+        assert_eq!(op.kind, "merge");
+        assert!(op.incoming.is_some());
+        assert!(st.files.iter().any(|f| f.path == "a.txt" && f.conflicted));
+        assert!(r.git(&["merge", "--abort"]));
+        assert!(status(&r.0).await.unwrap().operation.is_none());
+    }
+
+    #[tokio::test]
+    async fn detects_rebase_conflict() {
+        let r = TempRepo::diverged("rebase");
+        assert!(!r.git(&["rebase", "other"]));
+        let op = status(&r.0).await.unwrap().operation.expect("rebase in progress");
+        assert_eq!(op.kind, "rebase");
+        assert_eq!(op.head_name.as_deref(), Some("main"));
+        assert_eq!((op.step, op.total), (Some(1), Some(1)));
+        assert!(op.can_skip());
+    }
+
+    #[tokio::test]
+    async fn lists_stashes() {
+        let r = TempRepo::new("stash");
+        r.commit("a.txt", "one\n", "base");
+        std::fs::write(r.0.join("a.txt"), "two\n").unwrap();
+        assert!(r.git(&["stash", "push", "-m", "my work"]));
+        let list = stashes(&r.0).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].index, 0);
+        assert!(list[0].message.ends_with("my work"));
     }
 }

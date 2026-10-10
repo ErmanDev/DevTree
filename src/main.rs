@@ -1,3 +1,5 @@
+mod actions;
+mod api;
 mod git;
 mod graph;
 mod store;
@@ -15,41 +17,13 @@ use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use store::{Repo, Store};
+use api::{ApiError, ApiResult, AppState, Shared, bad, net_result, ok, repo, valid_ref, valid_sha};
+use store::Store;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 const STYLE_CSS: &str = include_str!("../web/style.css");
 
-struct AppState {
-    store: Store,
-    clone_dir: PathBuf,
-}
-
-type Shared = State<Arc<AppState>>;
-type ApiResult = Result<Json<Value>, ApiError>;
-
-struct ApiError(StatusCode, String);
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (self.0, Json(json!({ "error": self.1 }))).into_response()
-    }
-}
-
-impl From<String> for ApiError {
-    fn from(e: String) -> Self {
-        ApiError(StatusCode::UNPROCESSABLE_ENTITY, e)
-    }
-}
-
-fn bad(msg: impl Into<String>) -> ApiError {
-    ApiError(StatusCode::BAD_REQUEST, msg.into())
-}
-
-fn ok<T: serde::Serialize>(v: T) -> ApiResult {
-    Ok(Json(serde_json::to_value(v).map_err(|e| e.to_string())?))
-}
 
 // ---------------------------------------------------------------- startup
 
@@ -119,6 +93,20 @@ async fn main() {
         .route("/repos/{id}/stage", post(stage))
         .route("/repos/{id}/unstage", post(unstage))
         .route("/repos/{id}/commit", post(commit))
+        .route("/repos/{id}/operation/{action}", post(actions::operation))
+        .route("/repos/{id}/resolve", post(actions::resolve))
+        .route("/repos/{id}/file", get(actions::read_file).post(actions::write_file))
+        .route("/repos/{id}/discard", post(actions::discard))
+        .route("/repos/{id}/stash", post(actions::stash_save))
+        .route("/repos/{id}/stash/{n}/{action}", post(actions::stash_action))
+        .route("/repos/{id}/merge", post(actions::merge))
+        .route("/repos/{id}/rebase", post(actions::rebase))
+        .route("/repos/{id}/branch/delete", post(actions::delete_branch))
+        .route("/repos/{id}/branch/rename", post(actions::rename_branch))
+        .route("/repos/{id}/branch/upstream", post(actions::set_upstream))
+        .route("/repos/{id}/tag", post(actions::create_tag))
+        .route("/repos/{id}/tag/delete", post(actions::delete_tag))
+        .route("/repos/{id}/tag/push", post(actions::push_tag))
         .route("/fs", get(browse))
         .layer(middleware::from_fn(require_api_header));
 
@@ -192,33 +180,11 @@ async fn require_api_header(req: Request, next: Next) -> Response {
 
 // ---------------------------------------------------------------- helpers
 
-async fn repo(state: &AppState, id: &str) -> Result<Repo, ApiError> {
-    state.store.get(id).await.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("unknown repository {id}")))
-}
-
-fn valid_sha(s: &str) -> Result<&str, ApiError> {
-    if (4..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit()) { Ok(s) } else { Err(bad("invalid commit id")) }
-}
-
-/// Refuses anything git could read as an option, plus whitespace/control characters.
-fn valid_ref(s: &str) -> Result<&str, ApiError> {
-    if s.is_empty() || s.starts_with('-') || s.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        Err(bad(format!("invalid branch name: {s:?}")))
-    } else {
-        Ok(s)
-    }
-}
-
 fn expand_tilde(p: &str) -> PathBuf {
     match p.strip_prefix("~") {
         Some(rest) if rest.is_empty() || rest.starts_with('/') || rest.starts_with('\\') => home().join(rest.trim_start_matches(['/', '\\'])),
         _ => PathBuf::from(p),
     }
-}
-
-/// Network commands report their full output so the UI console can show it.
-fn net_result(out: git::GitOutput) -> ApiResult {
-    if out.ok { ok(out) } else { Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, git::error_text(&out))) }
 }
 
 // ---------------------------------------------------------------- repos
@@ -336,8 +302,8 @@ async fn repo_status(State(s): Shared, UrlPath(id): UrlPath<String>) -> ApiResul
 
 async fn repo_branches(State(s): Shared, UrlPath(id): UrlPath<String>) -> ApiResult {
     let r = repo(&s, &id).await?;
-    let (branches, remotes) = tokio::try_join!(git::branches(&r.path), git::remotes(&r.path))?;
-    ok(json!({ "branches": branches, "remotes": remotes }))
+    let (branches, remotes, stashes) = tokio::try_join!(git::branches(&r.path), git::remotes(&r.path), git::stashes(&r.path))?;
+    ok(json!({ "branches": branches, "remotes": remotes, "stashes": stashes }))
 }
 
 async fn commit_detail(State(s): Shared, UrlPath((id, sha)): UrlPath<(String, String)>) -> ApiResult {
@@ -386,7 +352,7 @@ async fn pull(State(s): Shared, UrlPath(id): UrlPath<String>, body: Option<Json<
         "rebase" => "--rebase",
         other => return Err(bad(format!("unknown pull mode {other}"))),
     };
-    net_result(git::run(&r.path, &["pull", flag, "--no-edit", "--progress"], git::NETWORK_TIMEOUT).await?)
+    net_result(git::run(&r.path, &["pull", flag, "--autostash", "--no-edit", "--progress"], git::NETWORK_TIMEOUT).await?)
 }
 
 #[derive(Deserialize, Default)]

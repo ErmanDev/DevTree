@@ -30,6 +30,8 @@
       </div>
       <button class="btn btn-accent" id="btnPush" title="Push current branch"><span class="ico">↑</span>Push</button>
       <button class="btn" id="btnBranch" title="Create a branch at HEAD"><span class="ico">⑂</span>Branch</button>
+      <button class="btn" id="btnStash" title="Stash all changes"><span class="ico">⊞</span>Stash</button>
+      <button class="btn" id="btnPop" title="Pop the latest stash"><span class="ico">⊟</span>Pop</button>
       <button class="btn btn-ghost" id="btnRefresh" title="Refresh (R)">↻</button>
       <button class="btn btn-ghost" id="btnTheme" title="Toggle light / dark">◐</button>
     </nav>
@@ -50,10 +52,14 @@
       <ul id="remoteList" class="list refs"></ul>
       <div class="section-head"><span>TAGS</span><span id="tagCount" class="count"></span></div>
       <ul id="tagList" class="list refs"></ul>
+      <div class="section-head"><span>STASHES</span><span id="stashCount" class="count"></span></div>
+      <ul id="stashList" class="list refs"></ul>
+      <p class="side-hint">Drag a branch onto another to merge or rebase. Right-click for more.</p>
     </section>
   </aside>
 
   <main class="main">
+    <div id="opBanner" class="op-banner" hidden></div>
     <div class="graph-head">
       <div class="col-graph" id="graphHeadCell">GRAPH</div>
       <div class="col-msg">COMMIT MESSAGE
@@ -80,6 +86,14 @@
       </div>
       <button id="loadMore" class="btn load-more" hidden>Load more commits</button>
     </div>
+    <div id="diffView" class="diff-view" hidden>
+      <div class="diff-head">
+        <span id="diffTitle"></span>
+        <span class="diff-actions" id="diffActions"></span>
+        <button class="btn btn-ghost" id="btnCloseDiff" title="Close (Esc)">✕</button>
+      </div>
+      <div id="diffBody" class="diff-body"></div>
+    </div>
   </main>
 
   <aside class="detail" id="detail">
@@ -94,13 +108,6 @@
     <pre id="consoleBody" class="console-body"></pre>
   </section>
 
-  <div id="diffView" class="diff-view" hidden>
-    <div class="diff-head">
-      <span id="diffTitle"></span>
-      <button class="btn btn-ghost" id="btnCloseDiff" title="Close (Esc)">✕</button>
-    </div>
-    <div id="diffBody" class="diff-body"></div>
-  </div>
 
   <div id="modal" class="modal" hidden>
     <div class="modal-card">
@@ -131,6 +138,17 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div id="dialog" class="modal" hidden>
+    <form class="modal-card dialog-card" id="dialogForm">
+      <div class="dialog-title" id="dialogTitle"></div>
+      <div class="dialog-body" id="dialogBody"></div>
+      <div class="modal-foot dialog-foot">
+        <button type="button" class="btn" id="dialogCancel">Cancel</button>
+        <button type="submit" class="btn btn-accent" id="dialogOk">OK</button>
+      </div>
+    </form>
   </div>
 
   <div id="ctxMenu" class="menu ctx" hidden></div>
