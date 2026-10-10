@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevTree</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231c1a17'/%3E%3Cpath d='M5 3v10M5 8c0-3 6-2 6-5' stroke='%23D97757' stroke-width='2' fill='none'/%3E%3Ccircle cx='5' cy='13' r='2' fill='%23D97757'/%3E%3Ccircle cx='11' cy='3' r='2' fill='%23E3B448'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">⎇</span> DevTree<span class="cursor">_</span></div>
+    <div class="repo-title">
+      <span id="repoName" class="repo-name">no repository</span>
+      <span id="branchPill" class="pill" hidden></span>
+      <span id="syncPill" class="pill pill-sync" hidden></span>
+    </div>
+    <nav class="toolbar">
+      <button class="btn" id="btnFetch" title="Fetch all remotes (git fetch --all --prune)"><span class="ico">⟳</span>Fetch</button>
+      <div class="split">
+        <button class="btn btn-accent" id="btnPull" title="Pull from upstream"><span class="ico">↓</span>Pull</button>
+        <button class="btn btn-accent caret" id="btnPullMode" title="Pull options">▾</button>
+        <div class="menu" id="pullMenu" hidden>
+          <button data-mode="merge">Fast-forward if possible <small>(default)</small></button>
+          <button data-mode="ff-only">Fast-forward only</button>
+          <button data-mode="rebase">Rebase</button>
+        </div>
+      </div>
+      <button class="btn btn-accent" id="btnPush" title="Push current branch"><span class="ico">↑</span>Push</button>
+      <button class="btn" id="btnBranch" title="Create a branch at HEAD"><span class="ico">⑂</span>Branch</button>
+      <button class="btn btn-ghost" id="btnRefresh" title="Refresh (R)">↻</button>
+      <button class="btn btn-ghost" id="btnTheme" title="Toggle light / dark">◐</button>
+    </nav>
+  </header>
+
+  <aside class="sidebar">
+    <section>
+      <div class="section-head">
+        <span>REPOSITORIES</span>
+        <button class="mini" id="btnImport" title="Import or clone a repository">+ ADD</button>
+      </div>
+      <ul id="repoList" class="list"></ul>
+    </section>
+    <section id="refsSection" hidden>
+      <div class="section-head"><span>LOCAL</span><span id="localCount" class="count"></span></div>
+      <ul id="localList" class="list refs"></ul>
+      <div class="section-head"><span>REMOTE</span><span id="remoteCount" class="count"></span></div>
+      <ul id="remoteList" class="list refs"></ul>
+      <div class="section-head"><span>TAGS</span><span id="tagCount" class="count"></span></div>
+      <ul id="tagList" class="list refs"></ul>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="graph-head">
+      <div class="col-graph" id="graphHeadCell">GRAPH</div>
+      <div class="col-msg">COMMIT MESSAGE
+        <input id="search" class="search" placeholder="filter: message, author, sha…  (/)" autocomplete="off">
+      </div>
+      <div class="col-author">AUTHOR</div>
+      <div class="col-date">DATE</div>
+      <div class="col-sha">SHA</div>
+    </div>
+    <div class="graph-scroll" id="graphScroll">
+      <div class="graph-body" id="graphBody">
+        <svg id="graphSvg" class="graph-svg"></svg>
+        <div id="rows"></div>
+      </div>
+      <div id="empty" class="empty">
+        <pre class="ascii">
+   ___           _____
+  |   \ _____ __|_   _| _ ___ ___
+  | |) / -_) V /  | || '_/ -_) -_)
+  |___/\___|\_/   |_||_| \___\___|
+        </pre>
+        <p>Import a local repository or clone one to get started.</p>
+        <button class="btn btn-accent" id="btnImportEmpty">+ Add repository</button>
+      </div>
+      <button id="loadMore" class="btn load-more" hidden>Load more commits</button>
+    </div>
+  </main>
+
+  <aside class="detail" id="detail">
+    <div class="detail-empty">Select a commit to see its details.</div>
+  </aside>
+
+  <section class="console" id="console">
+    <div class="console-head" id="consoleHead">
+      <span>▸ CONSOLE</span><span id="consoleLast" class="console-last"></span>
+      <button class="mini" id="btnClearConsole">CLEAR</button>
+    </div>
+    <pre id="consoleBody" class="console-body"></pre>
+  </section>
+
+  <div id="diffView" class="diff-view" hidden>
+    <div class="diff-head">
+      <span id="diffTitle"></span>
+      <button class="btn btn-ghost" id="btnCloseDiff" title="Close (Esc)">✕</button>
+    </div>
+    <div id="diffBody" class="diff-body"></div>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="tabs">
+          <button class="tab active" data-tab="local">Open local repo</button>
+          <button class="tab" data-tab="clone">Clone from URL</button>
+        </div>
+        <button class="btn btn-ghost" id="btnCloseModal">✕</button>
+      </div>
+      <div class="tab-body" data-body="local">
+        <div class="row-input">
+          <input id="fsPath" placeholder="/path/to/repository">
+          <button class="btn" id="btnFsGo">Go</button>
+        </div>
+        <ul id="fsList" class="fs-list"></ul>
+        <div class="modal-foot">
+          <span class="hint">Folders marked <b class="git-dot">●</b> are git repositories.</span>
+          <button class="btn btn-accent" id="btnDoImport">Import this folder</button>
+        </div>
+      </div>
+      <div class="tab-body" data-body="clone" hidden>
+        <label>Repository URL<input id="cloneUrl" placeholder="https://github.com/user/repo.git  or  git@github.com:user/repo.git"></label>
+        <label>Clone into folder <small>(blank = default)</small><input id="cloneParent" placeholder="~/devtree-repos"></label>
+        <div class="modal-foot">
+          <span class="hint">Uses your git credentials / SSH keys.</span>
+          <button class="btn btn-accent" id="btnDoClone">Clone</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ctxMenu" class="menu ctx" hidden></div>
+  <div id="toasts" class="toasts"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
