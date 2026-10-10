@@ -1,6 +1,6 @@
 //! Handlers for conflict resolution, discarding, stashes, merge/rebase and ref management.
 
-use crate::api::{ApiError, ApiResult, Shared, bad, net_result, ok, repo, valid_path, valid_ref};
+use crate::api::{ApiError, ApiResult, Shared, bad, net_result, ok, repo, valid_path, valid_ref, valid_sha};
 use crate::git::{self, GitOutput, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::net::{JobQuery, remote_cmd};
 use axum::{
@@ -348,5 +348,149 @@ pub async fn push_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): 
     match b.name.as_deref() {
         Some(name) => remote_cmd(&s, &r, &["push", "--progress", &remote, &format!("refs/tags/{}", valid_ref(name)?)], q.job.as_deref()).await,
         None => remote_cmd(&s, &r, &["push", "--progress", &remote, "--tags"], q.job.as_deref()).await,
+    }
+}
+
+// ---------------------------------------------------------------- cherry-pick, revert, reset
+
+#[derive(Deserialize)]
+pub struct CommitRefBody {
+    sha: String,
+}
+
+/// `-m 1` is required to cherry-pick or revert a merge commit (relative to its first parent).
+async fn mainline_args(dir: &Path, sha: &str) -> Result<Vec<&'static str>, ApiError> {
+    let parents = git::run_ok(dir, &["rev-list", "--parents", "-n", "1", sha, "--"]).await?;
+    Ok(if parents.split_whitespace().count() > 2 { vec!["-m", "1"] } else { vec![] })
+}
+
+pub async fn cherry_pick(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<CommitRefBody>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let sha = valid_sha(&b.sha)?;
+    let mut args = vec!["cherry-pick"];
+    args.extend(mainline_args(&r.path, sha).await?);
+    args.push(sha);
+    net_result(git::run(&r.path, &args, NETWORK_TIMEOUT).await?)
+}
+
+pub async fn revert(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<CommitRefBody>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let sha = valid_sha(&b.sha)?;
+    let mut args = vec!["revert", "--no-edit"];
+    args.extend(mainline_args(&r.path, sha).await?);
+    args.push(sha);
+    net_result(git::run(&r.path, &args, NETWORK_TIMEOUT).await?)
+}
+
+#[derive(Deserialize)]
+pub struct ResetBody {
+    target: String,
+    /// "soft" | "mixed" | "hard"
+    mode: String,
+}
+
+/// Move the current branch to `target`.
+pub async fn reset(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<ResetBody>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let mode = match b.mode.as_str() {
+        "soft" => "--soft",
+        "mixed" => "--mixed",
+        "hard" => "--hard",
+        other => return Err(bad(format!("unknown reset mode {other}"))),
+    };
+    net_result(local(&r.path, &["reset", "-q", mode, valid_ref(&b.target)?, "--"]).await?)
+}
+
+// ---------------------------------------------------------------- remotes
+
+#[derive(serde::Serialize)]
+struct RemoteInfo {
+    name: String,
+    fetch_url: String,
+    push_url: String,
+}
+
+pub async fn list_remotes(State(s): Shared, UrlPath(id): UrlPath<String>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let text = git::run_ok(&r.path, &["remote", "-v"]).await?;
+    ok(parse_remotes(&text))
+}
+
+fn parse_remotes(text: &str) -> Vec<RemoteInfo> {
+    let mut out: Vec<RemoteInfo> = Vec::new();
+    for line in text.lines() {
+        // "origin\thttps://example.com/x.git (fetch)"
+        let Some((name, rest)) = line.split_once('\t') else { continue };
+        let Some((url, kind)) = rest.rsplit_once(' ') else { continue };
+        let idx = match out.iter().position(|r| r.name == name) {
+            Some(i) => i,
+            None => {
+                out.push(RemoteInfo { name: name.to_string(), fetch_url: String::new(), push_url: String::new() });
+                out.len() - 1
+            }
+        };
+        if kind == "(push)" {
+            out[idx].push_url = url.to_string();
+        } else {
+            out[idx].fetch_url = url.to_string();
+        }
+    }
+    out
+}
+
+/// Refuses URLs git could read as options; whitespace is never valid in a remote URL.
+fn valid_url(u: &str) -> Result<&str, ApiError> {
+    let u = u.trim();
+    if u.is_empty() || u.starts_with('-') || u.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        Err(bad("invalid remote URL"))
+    } else {
+        Ok(u)
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RemoteBody {
+    name: String,
+    url: Option<String>,
+    new_name: Option<String>,
+}
+
+/// add | remove | rename | set-url
+pub async fn remote_action(State(s): Shared, UrlPath((id, action)): UrlPath<(String, String)>, Json(b): Json<RemoteBody>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let name = valid_ref(&b.name)?;
+    let url = || b.url.as_deref().ok_or_else(|| bad("url is required")).and_then(valid_url);
+    let out = match action.as_str() {
+        "add" => local(&r.path, &["remote", "add", name, url()?]).await?,
+        "remove" => local(&r.path, &["remote", "remove", name]).await?,
+        "rename" => local(&r.path, &["remote", "rename", name, valid_ref(b.new_name.as_deref().unwrap_or_default())?]).await?,
+        "set-url" => local(&r.path, &["remote", "set-url", name, url()?]).await?,
+        other => return Err(bad(format!("unknown remote action {other}"))),
+    };
+    net_result(out)
+}
+
+/// Fetch a single remote, or prune its deleted branches.
+pub async fn remote_network(State(s): Shared, UrlPath((id, action)): UrlPath<(String, String)>, Query(q): Query<JobQuery>, Json(b): Json<RemoteBody>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let name = valid_ref(&b.name)?;
+    match action.as_str() {
+        "fetch" => remote_cmd(&s, &r, &["fetch", "--prune", "--progress", name], q.job.as_deref()).await,
+        "prune" => remote_cmd(&s, &r, &["remote", "prune", name], q.job.as_deref()).await,
+        other => Err(bad(format!("unknown remote action {other}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_remote_list() {
+        let r = parse_remotes("origin\thttps://a/x.git (fetch)\norigin\tgit@a:x.git (push)\nup\t/path with space/r.git (fetch)\nup\t/path with space/r.git (push)\n");
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].fetch_url, "https://a/x.git");
+        assert_eq!(r[0].push_url, "git@a:x.git");
+        assert_eq!(r[1].fetch_url, "/path with space/r.git");
     }
 }

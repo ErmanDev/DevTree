@@ -232,6 +232,8 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .list .meta { color: var(--faint); font-size: 11px; }
 .refs li { font-size: 12px; padding: 2px 8px; }
 .refs li.current { color: var(--accent); font-weight: 600; }
+.refs li.remote-head { color: var(--muted); font-size: 11px; letter-spacing: .5px; margin-top: 2px; }
+.refs li.remote-head + li:not(.remote-head), .refs li.remote-head ~ li:not(.remote-head) { padding-left: 18px; }
 .refs li.current::before { content: "▶"; font-size: 9px; }
 .list .empty-note { color: var(--faint); font-style: italic; cursor: default; }
 .list .empty-note:hover { background: none; }

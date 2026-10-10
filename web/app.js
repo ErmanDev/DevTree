@@ -24,6 +24,7 @@ const state = {
   statusSig: "",
   branches: [],
   remotes: [],
+  remoteInfo: [],      // [{ name, fetch_url, push_url }]
   stashes: [],
   selected: null,      // sha or "WIP"
   filter: "",
@@ -472,10 +473,11 @@ function setToolbarEnabled(on) {
 async function reload() {
   if (!state.repo) return;
   const id = state.repo.id;
-  const [graph, status, refs] = await Promise.all([
+  const [graph, status, refs, remoteInfo] = await Promise.all([
     repoApi("GET", `/graph?limit=${state.limit}`),
     repoApi("GET", "/status"),
     repoApi("GET", "/branches"),
+    repoApi("GET", "/remotes"),
   ]);
   if (!state.repo || state.repo.id !== id) return; // switched repo meanwhile
   state.rows = graph.rows;
@@ -483,6 +485,7 @@ async function reload() {
   state.truncated = graph.truncated;
   state.branches = refs.branches;
   state.remotes = refs.remotes;
+  state.remoteInfo = remoteInfo;
   state.stashes = refs.stashes;
   applyStatus(status, true);
   setToolbarEnabled(true);
@@ -603,7 +606,14 @@ function renderRefs() {
   };
   const none = `<li class="empty-note">none</li>`;
   $("localList").innerHTML = local.map(item).join("") || none;
-  $("remoteList").innerHTML = remote.map(item).join("") || none;
+  // Remote branches grouped under their remote; the group header has the remote's own menu.
+  const remoteOf = (name) => state.remotes.filter((r) => name.startsWith(r + "/")).sort((a, b) => b.length - a.length)[0];
+  $("remoteList").innerHTML = state.remoteInfo
+    .map((rm) => {
+      const branches = remote.filter((b) => remoteOf(b.name) === rm.name);
+      return `<li class="remote-head" data-remote="${esc(rm.name)}" title="${esc(rm.fetch_url)}"><span class="name">☁ ${esc(rm.name)}</span><span class="meta">${branches.length}</span></li>${branches.map(item).join("")}`;
+    })
+    .join("") || none;
   $("tagList").innerHTML = tags.map(item).join("") || none;
   $("stashList").innerHTML = state.stashes
     .map((s) => `<li data-stash="${s.index}" data-sha="${esc(s.sha)}" title="${esc(s.message)} · ${esc(fullTime(s.time))}">
@@ -1046,6 +1056,113 @@ function refMenuItems(name, kind, sha) {
   }
   items.push("-", { label: "Copy name", fn: () => copy(name) });
   return items;
+}
+
+/** Context-menu entries for a commit. */
+function commitMenuItems(sha) {
+  const r = state.rows.find((x) => x.sha === sha);
+  const isHead = sha === state.status?.head;
+  const items = [];
+  for (const ref of r ? r.refs : []) {
+    if (ref.kind === "branch" && ref.name !== currentBranch()) items.push({ label: `Checkout ${ref.name}`, fn: () => checkoutRef(ref.name, false) });
+    if (ref.kind === "remote") items.push({ label: `Checkout ${ref.name} (track)`, fn: () => checkoutRef(ref.name, true) });
+  }
+  items.push({ label: "Checkout this commit (detached)", fn: () => checkoutCommit(sha) });
+  if (!isHead) {
+    items.push({ label: `Merge this commit into ${headLabel()}`, fn: () => mergeInto(sha) });
+    items.push({ label: `Rebase ${headLabel()} onto this commit`, fn: () => rebaseOnto(sha) });
+    items.push({ label: `Cherry-pick onto ${headLabel()}`, fn: () => cherryPick(sha) });
+  }
+  items.push(
+    { label: "Revert this commit…", fn: () => revertCommit(sha) },
+    { label: `Reset ${headLabel()} to here…`, fn: () => resetTo(sha), danger: true },
+    "-",
+    { label: "Create branch here…", fn: () => newBranch(sha) },
+    { label: "Create tag here…", fn: () => newTag(sha) },
+    "-",
+    { label: "Copy SHA", fn: () => copy(sha) },
+  );
+  if (r) items.push({ label: "Copy message", fn: () => copy(r.subject) });
+  return items;
+}
+
+function commitLabel(sha) {
+  const r = state.rows.find((x) => x.sha === sha);
+  return r ? `${short(sha)} "${r.subject.length > 50 ? r.subject.slice(0, 50) + "…" : r.subject}"` : short(sha);
+}
+
+function cherryPick(sha) {
+  run(null, `cherry-pick ${short(sha)} onto ${headLabel()}`, () => repoApi("POST", "/cherry-pick", { sha }));
+}
+
+async function revertCommit(sha) {
+  const ok = await confirmBox("Revert commit", `Create a new commit on ${headLabel()} that undoes ${commitLabel(sha)}?\n\nHistory is not rewritten, so this is safe on shared branches.`, "Revert");
+  if (ok) run(null, `revert ${short(sha)}`, () => repoApi("POST", "/revert", { sha }));
+}
+
+const RESET_MODES = {
+  "soft — keep the changes, staged": "soft",
+  "mixed — keep the changes, unstaged": "mixed",
+  "hard — throw the changes away": "hard",
+};
+
+async function resetTo(sha) {
+  const v = await ask({
+    title: `Reset ${headLabel()}`,
+    text: `Move ${headLabel()} to ${commitLabel(sha)}.\n\nCommits after it leave the branch (they stay reachable from the reflog for a while). Don't reset commits you already pushed and shared.`,
+    fields: [{ key: "mode", label: "What happens to the changes in those commits and your working tree?", type: "select", options: Object.keys(RESET_MODES), value: Object.keys(RESET_MODES)[1] }],
+    ok: "Reset",
+    danger: true,
+  });
+  if (!v) return;
+  const mode = RESET_MODES[v.mode];
+  if (mode === "hard" && hasWip() && !(await confirmBox("Discard uncommitted changes?", "A hard reset also throws away your uncommitted changes. This cannot be undone.", "Reset hard", true))) return;
+  run(null, `reset --${mode} to ${short(sha)}`, () => repoApi("POST", "/reset", { target: sha, mode }));
+}
+
+// ---------------------------------------------------------------- remotes
+
+async function addRemote() {
+  const v = await ask({
+    title: "Add remote",
+    fields: [
+      { key: "name", label: "Name", value: state.remotes.length ? "" : "origin", placeholder: "upstream", required: true },
+      { key: "url", label: "URL", placeholder: "https://github.com/user/repo.git", required: true },
+      { key: "fetch", label: "Fetch it now", type: "checkbox", value: true },
+    ],
+    ok: "Add remote",
+  });
+  if (!v) return;
+  const added = await run(null, `add remote ${v.name}`, () => repoApi("POST", "/remote/add", { name: v.name, url: v.url }));
+  if (added && v.fetch) remoteNet(v.name, "fetch");
+}
+
+function remoteNet(name, action) {
+  return run(null, `${action} ${name}`, (job) => repoApi("POST", withJob(`/remote-net/${action}`, job), { name }), { job: true });
+}
+
+function remoteMenuItems(name) {
+  const info = state.remoteInfo.find((r) => r.name === name) || { fetch_url: "", push_url: "" };
+  return [
+    { label: `Fetch ${name}`, fn: () => remoteNet(name, "fetch") },
+    { label: "Prune deleted branches", fn: () => remoteNet(name, "prune") },
+    "-",
+    { label: "Edit URL…", fn: async () => {
+      const v = await ask({ title: `URL of ${name}`, fields: [{ key: "url", label: "URL", value: info.fetch_url, required: true }], ok: "Save" });
+      if (v && v.url !== info.fetch_url) run(null, `set URL of ${name}`, () => repoApi("POST", "/remote/set-url", { name, url: v.url }));
+    } },
+    { label: "Rename…", fn: async () => {
+      const v = await ask({ title: `Rename remote ${name}`, fields: [{ key: "n", label: "New name", value: name, required: true }], ok: "Rename" });
+      if (v && v.n !== name) run(null, `rename remote ${name} → ${v.n}`, () => repoApi("POST", "/remote/rename", { name, new_name: v.n }));
+    } },
+    { label: "Copy URL", fn: () => copy(info.fetch_url) },
+    "-",
+    { label: `Remove ${name}…`, danger: true, fn: async () => {
+      if (await confirmBox("Remove remote", `Remove the remote ${name}?\n\nOnly the link and its remote-tracking branches are removed; nothing on the server changes.`, "Remove", true)) {
+        run(null, `remove remote ${name}`, () => repoApi("POST", "/remote/remove", { name }));
+      }
+    } },
+  ];
 }
 
 function stashMenuItems(n) {
@@ -1503,6 +1620,17 @@ function wire() {
       showMenu(e.clientX, e.clientY, refMenuItems(li.dataset.ref, li.dataset.kind, li.dataset.sha));
     };
   }
+  $("remoteList").addEventListener("contextmenu", (e) => {
+    const head = e.target.closest("li[data-remote]");
+    if (!head) return;
+    e.preventDefault();
+    showMenu(e.clientX, e.clientY, remoteMenuItems(head.dataset.remote));
+  });
+  $("remoteList").addEventListener("click", (e) => {
+    const head = e.target.closest("li[data-remote]");
+    if (head) showMenu(e.clientX, e.clientY, remoteMenuItems(head.dataset.remote));
+  });
+  $("btnAddRemote").onclick = addRemote;
   $("stashList").onclick = (e) => {
     const li = e.target.closest("li[data-stash]");
     if (li) { closeDiff(); selectCommit(li.dataset.sha); }
@@ -1535,26 +1663,7 @@ function wire() {
       showMenu(e.clientX, e.clientY, refMenuItems(badge.dataset.ref, badge.dataset.kind, sha));
       return;
     }
-    const r = state.rows.find((x) => x.sha === sha);
-    const items = [];
-    for (const ref of r.refs) {
-      if (ref.kind === "branch" && ref.name !== currentBranch()) items.push({ label: `Checkout ${ref.name}`, fn: () => checkoutRef(ref.name, false) });
-      if (ref.kind === "remote") items.push({ label: `Checkout ${ref.name} (track)`, fn: () => checkoutRef(ref.name, true) });
-    }
-    items.push({ label: "Checkout this commit (detached)", fn: () => checkoutCommit(sha) });
-    if (sha !== state.status?.head) {
-      items.push({ label: `Merge this commit into ${headLabel()}`, fn: () => mergeInto(sha) });
-      items.push({ label: `Rebase ${headLabel()} onto this commit`, fn: () => rebaseOnto(sha) });
-    }
-    items.push(
-      "-",
-      { label: "Create branch here…", fn: () => newBranch(sha) },
-      { label: "Create tag here…", fn: () => newTag(sha) },
-      "-",
-      { label: "Copy SHA", fn: () => copy(sha) },
-      { label: "Copy message", fn: () => copy(r.subject) },
-    );
-    showMenu(e.clientX, e.clientY, items);
+    showMenu(e.clientX, e.clientY, commitMenuItems(sha));
   };
   $("loadMore").onclick = (e) => { state.limit += PAGE; run(e.currentTarget, "load more commits", async () => {}); };
   $("search").oninput = (e) => { state.filter = e.target.value.trim(); renderGraph(); };
