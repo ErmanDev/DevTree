@@ -599,6 +599,47 @@ h3 .warn { color: var(--del); }
 .dialog-body textarea { min-height: 70px; resize: vertical; }
 .dialog-foot { justify-content: flex-end; padding: 0 16px 14px; }
 
+/* ---------------------------------------------------------------- progress jobs & fetch */
+
+.jobs { position: absolute; left: 14px; bottom: 14px; z-index: 70; display: flex; flex-direction: column; gap: 10px; width: min(440px, calc(100% - 28px)); pointer-events: none; }
+.job {
+  pointer-events: auto;
+  background: var(--panel);
+  border: 2px solid var(--shadow);
+  box-shadow: 4px 4px 0 var(--accent);
+  padding: 8px 10px 10px;
+  animation: slide .15s ease-out;
+}
+.job-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.job-title { font: 20px/1.1 var(--pixel); color: var(--accent); text-transform: uppercase; letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-cancel { font-size: 11px; color: var(--muted); }
+.job-cancel:hover { color: var(--del); }
+.job-phase { font-size: 11px; color: var(--muted); margin: 2px 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* chunky segmented retro progress bar */
+.job-bar { height: 14px; border: 2px solid var(--line); background: var(--bg); padding: 1px; overflow: hidden; position: relative; }
+.job-fill {
+  height: 100%;
+  width: 0;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 10px);
+  transition: width .2s;
+}
+.job-bar.indeterminate .job-fill { width: 30%; animation: sweep 1.2s linear infinite; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+
+.fetch-info {
+  background: none;
+  border: 0;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 2px 4px;
+}
+.fetch-info:hover { color: var(--accent); }
+.fetch-info.problem { color: var(--del); }
+.menu .menu-label { padding: 4px 10px 2px; font: 15px/1 var(--pixel); color: var(--faint); letter-spacing: 1px; }
+.menu button .tick { display: inline-block; width: 16px; color: var(--accent); }
+.menu button:hover .tick { color: inherit; }
+
 /* ---------------------------------------------------------------- narrow screens */
 
 @media (max-width: 1100px) {

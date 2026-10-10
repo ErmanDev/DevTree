@@ -6,8 +6,12 @@
 use serde::Serialize;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tokio::sync::Notify;
 
 pub const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 pub const NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
@@ -29,36 +33,127 @@ pub struct GitOutput {
 }
 
 pub async fn run(dir: &Path, args: &[&str], timeout: Duration) -> Result<GitOutput, String> {
+    run_with(dir, args, timeout, &Extra::default()).await
+}
+
+/// A long-running git command the UI can watch and cancel.
+#[derive(Default)]
+pub struct Job {
+    /// The latest progress line git printed (e.g. "Receiving objects:  45% (450/1000)").
+    progress: std::sync::Mutex<String>,
+    cancelled: AtomicBool,
+    cancel: Notify,
+}
+
+impl Job {
+    pub fn progress(&self) -> String {
+        self.progress.lock().map(|p| p.clone()).unwrap_or_default()
+    }
+
+    pub fn set_progress(&self, line: &str) {
+        if let Ok(mut p) = self.progress.lock() {
+            *p = line.to_string();
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        // notify_one stores a permit, so a cancel that races the spawn is not lost.
+        self.cancel.notify_one();
+    }
+}
+
+/// Optional extras for a git invocation.
+#[derive(Default)]
+pub struct Extra {
+    /// Report progress to, and accept cancellation from, this job.
+    pub job: Option<Arc<Job>>,
+    /// `-c key=value` settings placed before the subcommand.
+    pub config: Vec<String>,
+    pub env: Vec<(&'static str, String)>,
+}
+
+pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extra) -> Result<GitOutput, String> {
     let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(dir)
-        .args(["-c", "color.ui=false", "-c", "core.quotepath=false"])
-        .args(args)
+    cmd.arg("-C").arg(dir).args(["-c", "color.ui=false", "-c", "core.quotepath=false"]);
+    for c in &extra.config {
+        cmd.arg("-c").arg(c);
+    }
+    cmd.args(args)
         // Never block on an interactive username/password prompt: there is no TTY.
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         // `--continue` steps would otherwise open an editor for the commit message.
         .env("GIT_EDITOR", "true")
         .env("LC_ALL", "C")
+        .envs(extra.env.iter().map(|(k, v)| (*k, v.as_str())))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
     let command = format!("git {}", args.join(" "));
-    let child = cmd.spawn().map_err(|e| format!("failed to start git: {e}"))?;
-    let out = match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(r) => r.map_err(|e| format!("git failed: {e}"))?,
-        Err(_) => return Err(format!("`{command}` timed out after {}s", timeout.as_secs())),
+    let mut child = cmd.spawn().map_err(|e| format!("failed to start git: {e}"))?;
+
+    // Read both pipes concurrently; stderr is scanned live for progress lines.
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
+    let out_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf).await;
+        buf
+    });
+    let job = extra.job.clone();
+    let err_task = tokio::spawn(async move {
+        let mut all = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while let Ok(n) = stderr.read(&mut chunk).await {
+            if n == 0 {
+                break;
+            }
+            all.extend_from_slice(&chunk[..n]);
+            if let Some(job) = &job {
+                // Progress redraws with \r; the last non-empty segment is the current state.
+                let text = String::from_utf8_lossy(&all[all.len().saturating_sub(512)..]).into_owned();
+                if let Some(line) = text.split(['\r', '\n']).map(str::trim).rfind(|l| !l.is_empty()) {
+                    job.set_progress(line);
+                }
+            }
+        }
+        all
+    });
+
+    let cancelled = async {
+        match &extra.job {
+            Some(j) if j.cancelled.load(Ordering::SeqCst) => {}
+            Some(j) => j.cancel.notified().await,
+            None => std::future::pending().await,
+        }
     };
+    let status = tokio::select! {
+        s = child.wait() => s.map_err(|e| format!("git failed: {e}"))?,
+        _ = cancelled => {
+            let _ = child.kill().await;
+            return Err(CANCELLED.to_string());
+        }
+        _ = tokio::time::sleep(timeout) => {
+            let _ = child.kill().await;
+            return Err(format!("`{command}` timed out after {}s", timeout.as_secs()));
+        }
+    };
+    let stdout = out_task.await.unwrap_or_default();
+    let stderr = err_task.await.unwrap_or_default();
     Ok(GitOutput {
-        ok: out.status.success(),
-        code: out.status.code(),
+        ok: status.success(),
+        code: status.code(),
         command,
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr).into_owned(),
     })
 }
+
+/// Error text for a command the user cancelled.
+pub const CANCELLED: &str = "cancelled by user";
 
 /// Run and return stdout, turning a non-zero exit into an error carrying stderr.
 pub async fn run_ok(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -200,6 +295,8 @@ fn short_ref(full: &str) -> String {
 #[derive(Debug, Default, Serialize)]
 pub struct Status {
     pub operation: Option<Operation>,
+    /// Unix time of the last fetch/pull (modification time of FETCH_HEAD).
+    pub last_fetch: Option<i64>,
     pub branch: Option<String>,
     pub head: Option<String>,
     pub upstream: Option<String>,
@@ -226,7 +323,13 @@ pub async fn status(dir: &Path) -> Result<Status, String> {
         run_ok(dir, &["rev-parse", "--absolute-git-dir"]),
     )?;
     let mut st = parse_status(&text);
-    st.operation = operation(Path::new(git_dir.trim()));
+    let git_dir = Path::new(git_dir.trim());
+    st.operation = operation(git_dir);
+    st.last_fetch = std::fs::metadata(git_dir.join("FETCH_HEAD"))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
     Ok(st)
 }
 

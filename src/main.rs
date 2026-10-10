@@ -2,6 +2,7 @@ mod actions;
 mod api;
 mod git;
 mod graph;
+mod net;
 mod store;
 
 use axum::{
@@ -18,6 +19,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use api::{ApiError, ApiResult, AppState, Shared, bad, net_result, ok, repo, valid_ref, valid_sha};
+use net::{JobQuery, remote_cmd};
 use store::Store;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
@@ -70,10 +72,19 @@ fn usage(err: &str) -> ! {
     std::process::exit(if err.is_empty() { 0 } else { 2 });
 }
 
-#[tokio::main]
-async fn main() {
-    let cfg = parse_args();
-    let state = Arc::new(AppState { store: Store::load(&cfg.data_dir), clone_dir: cfg.clone_dir });
+fn main() {
+    // git runs `devtree credential-helper get` to fetch credentials typed into the UI.
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("credential-helper") {
+        net::credential_helper(args.next().as_deref());
+        return;
+    }
+    let runtime = tokio::runtime::Runtime::new().expect("failed to start the async runtime");
+    runtime.block_on(serve(parse_args()));
+}
+
+async fn serve(cfg: Config) {
+    let state = Arc::new(AppState { store: Store::load(&cfg.data_dir), clone_dir: cfg.clone_dir, net: net::Net::new() });
 
     let api = Router::new()
         .route("/repos", get(list_repos).post(import_repo))
@@ -107,6 +118,9 @@ async fn main() {
         .route("/repos/{id}/tag", post(actions::create_tag))
         .route("/repos/{id}/tag/delete", post(actions::delete_tag))
         .route("/repos/{id}/tag/push", post(actions::push_tag))
+        .route("/jobs/{job}", get(net::job_status))
+        .route("/jobs/{job}/cancel", post(net::job_cancel))
+        .route("/credentials", get(net::list_credentials).post(net::set_credentials).delete(net::forget_credentials))
         .route("/fs", get(browse))
         .layer(middleware::from_fn(require_api_header));
 
@@ -174,7 +188,7 @@ async fn require_api_header(req: Request, next: Next) -> Response {
     if req.headers().get("x-devtree").is_some() {
         next.run(req).await
     } else {
-        ApiError(StatusCode::FORBIDDEN, "missing X-DevTree header".into()).into_response()
+        ApiError::new(StatusCode::FORBIDDEN, "missing X-DevTree header").into_response()
     }
 }
 
@@ -216,7 +230,7 @@ struct CloneBody {
     parent: Option<String>,
 }
 
-async fn clone_repo(State(s): Shared, Json(b): Json<CloneBody>) -> ApiResult {
+async fn clone_repo(State(s): Shared, Query(q): Query<JobQuery>, Json(b): Json<CloneBody>) -> ApiResult {
     let url = b.url.trim();
     if url.is_empty() || url.starts_with('-') || url.chars().any(char::is_whitespace) {
         return Err(bad("invalid repository URL"));
@@ -235,10 +249,16 @@ async fn clone_repo(State(s): Shared, Json(b): Json<CloneBody>) -> ApiResult {
         return Err(bad(format!("{} already exists – import it instead", dest.display())));
     }
     let dest_s = dest.to_string_lossy().into_owned();
-    let out = git::run(&parent, &["clone", "--progress", "--", url, &dest_s], git::CLONE_TIMEOUT).await?;
-    if !out.ok {
-        return Err(git::error_text(&out).into());
-    }
+    let args = ["clone", "--progress", "--", url, &dest_s];
+    let result = net::run_network(&s.net, &format!("clone:{dest_s}"), &parent, &args, git::CLONE_TIMEOUT, q.job.as_deref()).await;
+    let out = match result {
+        Ok(out) if out.ok => out,
+        other => {
+            // A cancelled or failed clone can leave a half-written folder behind; it did not exist before.
+            let _ = std::fs::remove_dir_all(&dest);
+            return net_result(other?);
+        }
+    };
     let repo = s.store.add(dest).await?;
     ok(json!({ "repo": repo, "output": out }))
 }
@@ -332,9 +352,9 @@ async fn worktree_diff(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q):
 
 // ---------------------------------------------------------------- remote operations
 
-async fn fetch(State(s): Shared, UrlPath(id): UrlPath<String>) -> ApiResult {
+async fn fetch(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>) -> ApiResult {
     let r = repo(&s, &id).await?;
-    net_result(git::run(&r.path, &["fetch", "--all", "--prune", "--progress"], git::NETWORK_TIMEOUT).await?)
+    remote_cmd(&s, &r, &["fetch", "--all", "--prune", "--progress"], q.job.as_deref()).await
 }
 
 #[derive(Deserialize, Default)]
@@ -343,7 +363,7 @@ struct PullBody {
     mode: Option<String>,
 }
 
-async fn pull(State(s): Shared, UrlPath(id): UrlPath<String>, body: Option<Json<PullBody>>) -> ApiResult {
+async fn pull(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>, body: Option<Json<PullBody>>) -> ApiResult {
     let r = repo(&s, &id).await?;
     let mode = body.and_then(|Json(b)| b.mode).unwrap_or_else(|| "merge".into());
     let flag = match mode.as_str() {
@@ -352,7 +372,7 @@ async fn pull(State(s): Shared, UrlPath(id): UrlPath<String>, body: Option<Json<
         "rebase" => "--rebase",
         other => return Err(bad(format!("unknown pull mode {other}"))),
     };
-    net_result(git::run(&r.path, &["pull", flag, "--autostash", "--no-edit", "--progress"], git::NETWORK_TIMEOUT).await?)
+    remote_cmd(&s, &r, &["pull", flag, "--autostash", "--no-edit", "--progress"], q.job.as_deref()).await
 }
 
 #[derive(Deserialize, Default)]
@@ -361,7 +381,7 @@ struct PushBody {
     force: bool,
 }
 
-async fn push(State(s): Shared, UrlPath(id): UrlPath<String>, body: Option<Json<PushBody>>) -> ApiResult {
+async fn push(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>, body: Option<Json<PushBody>>) -> ApiResult {
     let r = repo(&s, &id).await?;
     let force = body.is_some_and(|Json(b)| b.force);
     let st = git::status(&r.path).await?;
@@ -373,11 +393,10 @@ async fn push(State(s): Shared, UrlPath(id): UrlPath<String>, body: Option<Json<
     // No upstream yet: publish the branch to the first remote (preferring origin) and track it.
     let remote;
     if st.upstream.is_none() {
-        let remotes = git::remotes(&r.path).await?;
-        remote = remotes.iter().find(|r| *r == "origin").or(remotes.first()).cloned().ok_or_else(|| bad("this repository has no remote to push to"))?;
+        remote = git::default_remote(&r.path).await?.ok_or_else(|| bad("this repository has no remote to push to"))?;
         args.extend(["-u", remote.as_str(), branch.as_str()]);
     }
-    net_result(git::run(&r.path, &args, git::NETWORK_TIMEOUT).await?)
+    remote_cmd(&s, &r, &args, q.job.as_deref()).await
 }
 
 // ---------------------------------------------------------------- local operations

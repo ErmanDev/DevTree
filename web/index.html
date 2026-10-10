@@ -16,9 +16,14 @@
       <span id="repoName" class="repo-name">no repository</span>
       <span id="branchPill" class="pill" hidden></span>
       <span id="syncPill" class="pill pill-sync" hidden></span>
+      <button id="fetchInfo" class="fetch-info" hidden title="Click to fetch now"></button>
     </div>
     <nav class="toolbar">
-      <button class="btn" id="btnFetch" title="Fetch all remotes (git fetch --all --prune)"><span class="ico">⟳</span>Fetch</button>
+      <div class="split">
+        <button class="btn" id="btnFetch" title="Fetch all remotes (git fetch --all --prune)"><span class="ico">⟳</span>Fetch</button>
+        <button class="btn caret" id="btnFetchMode" title="Auto-fetch options">▾</button>
+        <div class="menu" id="fetchMenu" hidden></div>
+      </div>
       <div class="split">
         <button class="btn btn-accent" id="btnPull" title="Pull from upstream"><span class="ico">↓</span>Pull</button>
         <button class="btn btn-accent caret" id="btnPullMode" title="Pull options">▾</button>
@@ -60,6 +65,7 @@
 
   <main class="main">
     <div id="opBanner" class="op-banner" hidden></div>
+    <div id="jobs" class="jobs"></div>
     <div class="graph-head">
       <div class="col-graph" id="graphHeadCell">GRAPH</div>
       <div class="col-msg">COMMIT MESSAGE

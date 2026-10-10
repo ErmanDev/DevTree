@@ -9,6 +9,9 @@ It runs as one small binary (~1.6 MB release build) that serves a web UI on `htt
 - **Commit graph**: colored lanes with curved merge and branch edges, author-initial nodes, a ring around HEAD, and branch/remote/tag badges.
 - **WIP row**: uncommitted changes appear at the top of the graph, like GitKraken.
 - **Pull / Push / Fetch** buttons. Pull has a mode menu (fast-forward if possible, ff-only, rebase) and auto-stashes local changes. Push sets the upstream automatically for new branches.
+- **Live progress with Cancel** for fetch, pull, push, clone and tag/remote-branch pushes. A retro progress bar shows git's own progress ("Receiving objects: 45%"). Cancel stops git immediately, and a cancelled clone leaves no half-written folder. Network commands on one repository run one at a time, so a background fetch never collides with your pull.
+- **Sign in to HTTPS remotes**: when a server asks for credentials, DevTree asks for a username and password/token, then retries. Credentials are kept in memory only (for one operation, or until DevTree closes). If you have a git credential manager, it saves them as usual. SSH failures get a short guide instead (load your key with `ssh-add`, accept the host key). ssh is run in batch mode, so it fails instead of hanging on a prompt nobody can see.
+- **Auto-fetch** every 1, 5 (default), 15 or 30 minutes from the Fetch ▾ menu, or off. The header shows when the repo was last fetched. Background fetches never pop up dialogs: if one needs a sign-in, the header says so and a click fetches with a prompt.
 - **Merge conflicts**:
   - A banner shows any merge, rebase, cherry-pick or revert in progress (with rebase step x/y), with **Continue / Commit merge**, **Skip** and **Abort** buttons.
   - A **conflict editor** shows each conflict side by side (current vs incoming). Pick current, incoming or both, or edit the file by hand, then save and mark it resolved.
@@ -48,6 +51,7 @@ Options:
   - `git.rs`: runs git, parses porcelain output, and detects in-progress merges and rebases.
   - `actions.rs`: conflicts, discard, stash, merge/rebase, branch and tag endpoints.
   - `api.rs`: shared handler plumbing and input validation.
+  - `net.rs`: progress jobs, cancel, the per-repo network lock, credentials and sign-in failure detection.
   - `graph.rs`: lays out the lanes server-side, so the browser only draws them.
   - `store.rs`: the imported-repo list (`repos.json`).
 - **Frontend** (`web/`): plain HTML, CSS and JS that draw the graph in SVG. The files are compiled into the binary with `include_str!`.
@@ -62,4 +66,4 @@ DevTree can run git commands on your machine, so it:
 - never passes user input through a shell, and rejects branch names that look like options,
 - only accepts file paths inside the repository, and only lets the conflict editor write to files that are currently conflicted.
 
-Git never prompts interactively (`GIT_TERMINAL_PROMPT=0`). For private remotes, use SSH keys or a credential helper.
+Git never prompts in a terminal (`GIT_TERMINAL_PROMPT=0`). Credentials typed into DevTree reach git through DevTree acting as a git credential helper (`devtree credential-helper get`). The secret travels in that one child process's environment, never on a command line or disk.

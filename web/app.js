@@ -31,7 +31,12 @@ const state = {
   amend: false,
   pullMode: "merge",
   conflict: null,      // conflict editor state
+  netBusy: 0,          // network commands in flight
+  autoFetch: 5,        // minutes between background fetches; 0 = off
+  lastAutoFetch: {},   // repo id -> unix time of the last auto-fetch attempt
+  autoFetchProblem: null,
 };
+const AUTO_FETCH_CHOICES = [0, 1, 5, 15, 30];
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -47,9 +52,17 @@ async function api(method, path, body) {
   }
   const res = await fetch("/api" + path, opts);
   const data = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+    const err = new Error(data.error || res.statusText);
+    err.status = res.status;
+    err.auth = data.auth || null;
+    throw err;
+  }
   return data;
 }
+
+/** Adds a progress-job id to an API path. */
+const withJob = (path, job) => (job ? `${path}${path.includes("?") ? "&" : "?"}job=${job}` : path);
 const repoApi = (method, path, body) => api(method, `/repos/${state.repo.id}${path}`, body);
 
 // ---------------------------------------------------------------- console & toasts
@@ -90,32 +103,200 @@ function fail(e, what) {
 
 /**
  * Runs an action with a button showing busy state; logs output; refreshes afterwards.
- * `onError(err)` may return true to say it handled the failure itself.
+ * Options:
+ *   job      – `fn` receives a job id: show live progress with a Cancel button.
+ *   silent   – background work (auto-fetch): no toasts, no sign-in prompts; errors are re-thrown.
+ *   onError  – `onError(err)` may return true to say it handled the failure itself.
+ * When a remote asks for a password, the user is prompted and the action retried.
  */
-async function run(btn, what, fn, { refresh = true, onError = null } = {}) {
+async function run(btn, what, fn, { refresh = true, onError = null, job = false, silent = false } = {}) {
   if (btn) { btn.classList.add("busy"); btn.disabled = true; }
   log(`▸ ${what}…`, "cmd");
   try {
-    const out = await fn();
-    if (out && out.output) logOutput(out.output); else logOutput(out);
-    log(`✓ ${what}`, "okl");
-    toast(`✓ ${what}`);
-    if (refresh) await reload();
-    return out;
-  } catch (e) {
-    if (refresh) await reload().catch(() => {});
-    if (onError && (await onError(e))) return;
-    if (conflictCount()) {
-      // Merges, rebases, pulls and stash pops stop here when they hit conflicts.
-      log(`✗ ${what}: ${e.message}`, "err");
-      toast(`${what} stopped with conflicts\nResolve them in the working tree panel.`, true);
-      selectWip();
-    } else {
-      fail(e, what);
+    for (;;) {
+      const jobId = job ? newJobId() : null;
+      const card = jobId && !silent ? showJob(jobId, what) : null;
+      if (job) state.netBusy++;
+      try {
+        const out = await fn(jobId);
+        if (out && out.output) logOutput(out.output); else logOutput(out);
+        log(`✓ ${what}`, "okl");
+        if (!silent) toast(`✓ ${what}`);
+        if (refresh) await reload();
+        return out;
+      } catch (e) {
+        if (card) hideJob(jobId);
+        if (silent) throw e;
+        if (e.message === "cancelled by user") {
+          log(`■ ${what} cancelled`, "err");
+          toast(`${what} cancelled`);
+          if (refresh) await reload().catch(() => {});
+          return;
+        }
+        if (e.auth) {
+          log(`✗ ${what}: ${e.message}`, "err");
+          if (e.auth.kind === "https" && (await signIn(e.auth, what))) continue; // retry with credentials
+          if (e.auth.kind === "ssh") await explainSsh(e.auth);
+          return;
+        }
+        if (refresh) await reload().catch(() => {});
+        if (onError && (await onError(e))) return;
+        if (conflictCount()) {
+          // Merges, rebases, pulls and stash pops stop here when they hit conflicts.
+          log(`✗ ${what}: ${e.message}`, "err");
+          toast(`${what} stopped with conflicts\nResolve them in the working tree panel.`, true);
+          selectWip();
+        } else {
+          fail(e, what);
+        }
+        return;
+      } finally {
+        if (job) state.netBusy--;
+        if (card) hideJob(jobId);
+      }
     }
   } finally {
     if (btn) { btn.classList.remove("busy"); btn.disabled = false; }
   }
+}
+
+// ---------------------------------------------------------------- progress jobs
+
+const newJobId = () => `j-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** Shows a progress card for a running network command and polls its progress. */
+function showJob(id, what) {
+  const card = document.createElement("div");
+  card.className = "job";
+  card.id = `job-${id}`;
+  card.innerHTML = `<div class="job-head"><span class="job-title">${esc(what)}</span>
+      <button class="btn btn-ghost job-cancel" title="Cancel">✕ cancel</button></div>
+    <div class="job-phase">starting…</div>
+    <div class="job-bar"><div class="job-fill"></div></div>`;
+  card.querySelector(".job-cancel").onclick = async (e) => {
+    e.currentTarget.disabled = true;
+    e.currentTarget.textContent = "cancelling…";
+    await api("POST", `/jobs/${id}/cancel`).catch(() => {});
+  };
+  $("jobs").appendChild(card);
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const { progress } = await api("GET", `/jobs/${id}`);
+      updateJob(card, progress, started);
+    } catch { /* finished or not registered yet */ }
+  }, 250);
+  card.dataset.timer = timer;
+  return card;
+}
+
+function updateJob(card, progress, started) {
+  if (!progress) return;
+  // e.g. "Receiving objects:  45% (450/1000), 1.20 MiB | 2.00 MiB/s"
+  const m = progress.match(/^(?:remote:\s*)?([^:]+):\s+(\d+)%/);
+  const secs = Math.round((Date.now() - started) / 1000);
+  const text = progress.replace(/^Cloning into '(?:.*[\\/])?([^\\/']+)'\.\.\.$/, "Cloning into $1…");
+  card.querySelector(".job-phase").textContent = `${text}${secs > 2 ? `  · ${secs}s` : ""}`;
+  const fill = card.querySelector(".job-fill");
+  card.querySelector(".job-bar").classList.toggle("indeterminate", !m);
+  if (m) fill.style.width = `${m[2]}%`;
+}
+
+function hideJob(id) {
+  const card = $(`job-${id}`);
+  if (!card) return;
+  clearInterval(+card.dataset.timer);
+  card.remove();
+}
+
+// ---------------------------------------------------------------- fetch & auto-fetch
+
+async function fetchNow(btn) {
+  const res = await run(btn, "fetch", (job) => repoApi("POST", withJob("/fetch", job)), { job: true });
+  if (res) {
+    state.autoFetchProblem = null;
+    renderFetchInfo();
+  }
+  return res;
+}
+
+/** Runs every few seconds: fetches in the background once the chosen interval has passed. */
+async function autoFetchTick() {
+  renderFetchInfo();
+  const mins = state.autoFetch;
+  const repo = state.repo;
+  if (!mins || !repo || state.netBusy || !state.remotes.length || state.closeDialog) return;
+  const now = Date.now() / 1000;
+  const last = Math.max(state.status?.last_fetch || 0, state.lastAutoFetch[repo.id] || 0);
+  if (now - last < mins * 60) return;
+  state.lastAutoFetch[repo.id] = now;
+  try {
+    await run(null, "auto-fetch", (job) => repoApi("POST", withJob("/fetch", job)), { job: true, silent: true });
+    state.autoFetchProblem = null;
+  } catch (e) {
+    // Never pop up dialogs from background work: show it in the header instead.
+    state.autoFetchProblem = e.auth ? "sign-in needed" : "failed";
+    log(`✗ auto-fetch: ${e.message}`, "err");
+  }
+  renderFetchInfo();
+}
+
+function renderFetchInfo() {
+  const el = $("fetchInfo");
+  if (!state.repo || !state.status || !state.remotes.length) {
+    el.hidden = true;
+    return;
+  }
+  const last = state.status.last_fetch;
+  const auto = state.autoFetch ? ` · auto ${state.autoFetch}m` : "";
+  el.hidden = false;
+  el.classList.toggle("problem", !!state.autoFetchProblem);
+  el.textContent = state.autoFetchProblem
+    ? `⚠ auto-fetch ${state.autoFetchProblem} – click to fetch`
+    : `⟳ ${last ? `fetched ${relTime(last)}` : "never fetched"}${auto}`;
+  el.title = `${last ? `Last fetch: ${fullTime(last)}` : "Not fetched yet"}\n${state.autoFetch ? `Auto-fetch every ${state.autoFetch} min` : "Auto-fetch is off"}\nClick to fetch now.`;
+}
+
+function renderFetchMenu() {
+  const opt = (m) => `<button data-auto="${m}"><span class="tick">${state.autoFetch === m ? "✓" : ""}</span>${m ? `every ${m} minute${m === 1 ? "" : "s"}` : "off"}</button>`;
+  $("fetchMenu").innerHTML = `<button data-auto="now"><span class="tick">⟳</span>Fetch now</button><hr>
+    <div class="menu-label">AUTO-FETCH</div>${AUTO_FETCH_CHOICES.map(opt).join("")}`;
+}
+
+// ---------------------------------------------------------------- sign-in
+
+/** Asks for a username and token for an HTTPS remote. Resolves true if the user entered some. */
+async function signIn(auth, what) {
+  const fields = [];
+  if (!auth.host) fields.push({ key: "host", label: "Server (e.g. github.com)", required: true });
+  fields.push(
+    { key: "username", label: "Username", required: true },
+    { key: "password", label: "Password or personal access token", type: "password", required: true },
+    { key: "remember", label: "Remember until DevTree is closed (kept in memory only)", type: "checkbox", value: true },
+  );
+  const v = await ask({
+    title: `Sign in to ${auth.host || "the remote"}`,
+    text: `${what} needs you to sign in.\n\nGitHub, GitLab and Bitbucket want a personal access token here, not your account password. If git has a credential manager set up, it will save the login for next time.`,
+    fields,
+    ok: "Sign in & retry",
+  });
+  if (!v) return false;
+  try {
+    await api("POST", "/credentials", { host: auth.host || v.host, username: v.username, password: v.password, remember: v.remember });
+    log(`🔑 credentials set for ${auth.host || v.host}`, "okl");
+    return true;
+  } catch (e) {
+    fail(e, "save credentials");
+    return false;
+  }
+}
+
+async function explainSsh(auth) {
+  const host = auth.host || "the server";
+  const text = auth.reason === "hostkey"
+    ? `SSH doesn't recognise ${host} yet, so it refused to connect.\n\nOpen a terminal and run:\n    ssh -T git@${auth.host || "<host>"}\nCheck the fingerprint, answer "yes", then try again.`
+    : `${host} rejected your SSH key.\n\n• Check a key is loaded:  ssh-add -l\n• If your key has a passphrase, add it to the agent:  ssh-add\n• Make sure its public key (~/.ssh/id_*.pub) is added to your account on ${host}.\n\nOr switch the remote to an HTTPS URL and sign in with a token instead.`;
+  await ask({ title: "SSH sign-in failed", text, ok: "OK" });
 }
 
 // ---------------------------------------------------------------- dialog
@@ -139,7 +320,8 @@ function ask({ title, text = "", fields = [], ok = "OK", danger = false }) {
         const opts = f.options.map((o) => `<option value="${esc(o)}" ${o === f.value ? "selected" : ""}>${esc(o)}</option>`).join("");
         parts.push(`<label>${esc(f.label)}<select id="${id}">${opts}</select></label>`);
       } else {
-        parts.push(`<label>${esc(f.label)}<input id="${id}" value="${esc(f.value || "")}" placeholder="${esc(f.placeholder || "")}" autocomplete="off" spellcheck="false"></label>`);
+        const type = f.type === "password" ? "password" : "text";
+        parts.push(`<label>${esc(f.label)}<input id="${id}" type="${type}" value="${esc(f.value || "")}" placeholder="${esc(f.placeholder || "")}" autocomplete="off" spellcheck="false"></label>`);
       }
     }
     $("dialogBody").innerHTML = parts.join("");
@@ -165,7 +347,7 @@ function ask({ title, text = "", fields = [], ok = "OK", danger = false }) {
       const values = {};
       for (const f of fields) {
         const el = $(`dlg_${f.key}`);
-        values[f.key] = f.type === "checkbox" ? el.checked : el.value.trim();
+        values[f.key] = f.type === "checkbox" ? el.checked : f.type === "password" ? el.value : el.value.trim();
         if (f.required && !values[f.key]) { el.focus(); return; }
       }
       finish(values);
@@ -237,7 +419,9 @@ async function openRepo(id) {
   $("repoName").title = repo.path;
   closeDiff();
   $("detail").innerHTML = `<div class="detail-empty">Loading…</div>`;
+  state.autoFetchProblem = null;
   await reload();
+  setTimeout(autoFetchTick, 1500);
   // Start with the working tree when there are changes, otherwise the HEAD commit.
   if (!state.selected) {
     if (hasWip()) selectWip();
@@ -265,6 +449,7 @@ function renderEmpty() {
   $("syncPill").hidden = true;
   $("refsSection").hidden = true;
   $("opBanner").hidden = true;
+  $("fetchInfo").hidden = true;
   document.documentElement.style.setProperty("--banner-h", "0px");
   $("rows").innerHTML = "";
   $("graphSvg").innerHTML = "";
@@ -275,7 +460,7 @@ function renderEmpty() {
 }
 
 function setToolbarEnabled(on) {
-  for (const id of ["btnFetch", "btnPull", "btnPullMode", "btnPush", "btnBranch", "btnRefresh", "btnStash", "btnPop"]) $(id).disabled = !on;
+  for (const id of ["btnFetch", "btnFetchMode", "btnPull", "btnPullMode", "btnPush", "btnBranch", "btnRefresh", "btnStash", "btnPop"]) $(id).disabled = !on;
   if (on) {
     $("btnStash").disabled = !hasWip();
     $("btnPop").disabled = !state.stashes.length;
@@ -330,6 +515,7 @@ function renderHeaderStatus() {
   sp.hidden = !bits.length;
   sp.textContent = bits.join(" ");
   sp.title = st.upstream ? `tracking ${st.upstream}` : "no upstream branch";
+  renderFetchInfo();
 }
 
 const hasWip = () => !!(state.status && state.status.files.length);
@@ -737,10 +923,9 @@ async function newTag(start) {
     ok: "Create tag",
   });
   if (!v) return;
-  run(null, `tag ${v.name}`, async () => {
-    const out = await repoApi("POST", "/tag", { name: v.name, start: start || null, message: v.message || null });
-    return v.push ? repoApi("POST", "/tag/push", { name: v.name }) : out;
-  });
+  // Separate steps, so a sign-in retry of the push doesn't try to create the tag twice.
+  const made = await run(null, `tag ${v.name}`, () => repoApi("POST", "/tag", { name: v.name, start: start || null, message: v.message || null }));
+  if (made && v.push) pushTag(v.name);
 }
 
 /** Checks out a branch; if local changes are in the way, offers to stash them first. */
@@ -788,7 +973,7 @@ async function rebaseOnto(onto) {
 async function deleteBranch(name, kind) {
   if (kind === "remote") {
     if (await confirmBox("Delete remote branch", `Delete ${name} on the remote server?\n\nOther people will lose access to it. This cannot be undone from here.`, "Delete from remote", true)) {
-      run(null, `delete remote branch ${name}`, () => repoApi("POST", "/branch/delete", { name, remote: true }));
+      run(null, `delete remote branch ${name}`, (job) => repoApi("POST", withJob("/branch/delete", job), { name, remote: true }), { job: true });
     }
     return;
   }
@@ -818,6 +1003,10 @@ async function setUpstream(name) {
   if (v) run(null, `set upstream of ${name} to ${v.up}`, () => repoApi("POST", "/branch/upstream", { name, upstream: v.up }));
 }
 
+function pushTag(name) {
+  return run(null, name ? `push tag ${name}` : "push all tags", (job) => repoApi("POST", withJob("/tag/push", job), name ? { name } : {}), { job: true });
+}
+
 async function deleteTag(name) {
   const v = await ask({
     title: "Delete tag",
@@ -826,7 +1015,7 @@ async function deleteTag(name) {
     ok: "Delete",
     danger: true,
   });
-  if (v) run(null, `delete tag ${name}`, () => repoApi("POST", "/tag/delete", { name, remote: v.remote }));
+  if (v) run(null, `delete tag ${name}`, (job) => repoApi("POST", withJob("/tag/delete", job), { name, remote: v.remote }), { job: v.remote });
 }
 
 /** Context-menu entries for a branch or tag. kind: local | remote | tag */
@@ -851,8 +1040,8 @@ function refMenuItems(name, kind, sha) {
   }
   if (kind === "remote") items.push("-", { label: `Delete ${name} from remote…`, fn: () => deleteBranch(name, "remote"), danger: true });
   if (kind === "tag") {
-    items.push("-", { label: `Push tag ${name}`, fn: () => run(null, `push tag ${name}`, () => repoApi("POST", "/tag/push", { name })) });
-    items.push({ label: "Push all tags", fn: () => run(null, "push all tags", () => repoApi("POST", "/tag/push", {})) });
+    items.push("-", { label: `Push tag ${name}`, fn: () => pushTag(name) });
+    items.push({ label: "Push all tags", fn: () => pushTag(null) });
     items.push({ label: `Delete tag ${name}…`, fn: () => deleteTag(name), danger: true });
   }
   items.push("-", { label: "Copy name", fn: () => copy(name) });
@@ -1208,7 +1397,7 @@ async function doImport() {
 async function doClone() {
   const url = $("cloneUrl").value.trim();
   if (!url) return;
-  const res = await run($("btnDoClone"), `clone ${url}`, () => api("POST", "/repos/clone", { url, parent: $("cloneParent").value.trim() || null }), { refresh: false });
+  const res = await run($("btnDoClone"), `clone ${url}`, (job) => api("POST", withJob("/repos/clone", job), { url, parent: $("cloneParent").value.trim() || null }), { refresh: false, job: true });
   if (res) {
     closeModal();
     $("cloneUrl").value = "";
@@ -1241,14 +1430,31 @@ function copy(text) {
 
 function wire() {
   // Toolbar
-  $("btnFetch").onclick = (e) => run(e.currentTarget, "fetch", () => repoApi("POST", "/fetch"));
-  $("btnPull").onclick = (e) => run(e.currentTarget, `pull (${state.pullMode})`, () => repoApi("POST", "/pull", { mode: state.pullMode }));
-  $("btnPush").onclick = (e) => run(e.currentTarget, "push", () => repoApi("POST", "/push", {}));
+  $("btnFetch").onclick = (e) => fetchNow(e.currentTarget);
+  $("btnPull").onclick = (e) => run(e.currentTarget, `pull (${state.pullMode})`, (job) => repoApi("POST", withJob("/pull", job), { mode: state.pullMode }), { job: true });
+  $("btnPush").onclick = (e) => run(e.currentTarget, "push", (job) => repoApi("POST", withJob("/push", job), {}), { job: true });
   $("btnBranch").onclick = () => newBranch(null);
   $("btnStash").onclick = (e) => stashSave(e.currentTarget);
   $("btnPop").onclick = (e) => state.stashes.length && stashAction(state.stashes[0].index, "pop", e.currentTarget);
   $("btnRefresh").onclick = (e) => run(e.currentTarget, "refresh", async () => {}, { refresh: true });
-  $("btnPullMode").onclick = (e) => { e.stopPropagation(); $("pullMenu").hidden = !$("pullMenu").hidden; };
+  $("btnPullMode").onclick = (e) => { e.stopPropagation(); $("fetchMenu").hidden = true; $("pullMenu").hidden = !$("pullMenu").hidden; };
+  $("btnFetchMode").onclick = (e) => {
+    e.stopPropagation();
+    $("pullMenu").hidden = true;
+    renderFetchMenu();
+    $("fetchMenu").hidden = !$("fetchMenu").hidden;
+  };
+  $("fetchMenu").onclick = (e) => {
+    const b = e.target.closest("button[data-auto]");
+    if (!b) return;
+    $("fetchMenu").hidden = true;
+    if (b.dataset.auto === "now") return void fetchNow($("btnFetch"));
+    state.autoFetch = +b.dataset.auto;
+    try { localStorage.setItem("devtree.autoFetch", String(state.autoFetch)); } catch {}
+    toast(state.autoFetch ? `Auto-fetch every ${state.autoFetch} min` : "Auto-fetch off");
+    autoFetchTick();
+  };
+  $("fetchInfo").onclick = () => fetchNow($("btnFetch"));
   $("pullMenu").onclick = (e) => {
     const b = e.target.closest("button[data-mode]");
     if (!b) return;
@@ -1420,12 +1626,13 @@ function wire() {
   // Global
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#ctxMenu")) $("ctxMenu").hidden = true;
-    if (!e.target.closest(".split")) $("pullMenu").hidden = true;
+    if (!e.target.closest(".split")) { $("pullMenu").hidden = true; $("fetchMenu").hidden = true; }
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       $("ctxMenu").hidden = true;
       $("pullMenu").hidden = true;
+      $("fetchMenu").hidden = true;
       if (state.closeDialog) state.closeDialog();
       else if (!$("modal").hidden) closeModal();
       else closeDiff();
@@ -1445,6 +1652,7 @@ function wire() {
   window.addEventListener("focus", () => { if (state.repo) reload().catch(() => {}); });
   window.addEventListener("resize", renderBanner);
   setInterval(poll, 4000);
+  setInterval(autoFetchTick, 15000);
 }
 
 // ---------------------------------------------------------------- boot
@@ -1454,6 +1662,8 @@ function wire() {
     const theme = localStorage.getItem("devtree.theme");
     if (theme) document.documentElement.dataset.theme = theme;
     state.pullMode = localStorage.getItem("devtree.pullMode") || "merge";
+    const auto = localStorage.getItem("devtree.autoFetch");
+    if (auto !== null && AUTO_FETCH_CHOICES.includes(+auto)) state.autoFetch = +auto;
   } catch {}
   wire();
   renderEmpty();

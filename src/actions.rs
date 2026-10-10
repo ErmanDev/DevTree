@@ -2,6 +2,7 @@
 
 use crate::api::{ApiError, ApiResult, Shared, bad, net_result, ok, repo, valid_path, valid_ref};
 use crate::git::{self, GitOutput, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
+use crate::net::{JobQuery, remote_cmd};
 use axum::{
     Json,
     extract::{Path as UrlPath, Query, State},
@@ -252,7 +253,7 @@ pub struct DeleteBranchBody {
     force: bool,
 }
 
-pub async fn delete_branch(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<DeleteBranchBody>) -> ApiResult {
+pub async fn delete_branch(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>, Json(b): Json<DeleteBranchBody>) -> ApiResult {
     let r = repo(&s, &id).await?;
     let name = valid_ref(&b.name)?;
     if !b.remote {
@@ -265,7 +266,7 @@ pub async fn delete_branch(State(s): Shared, UrlPath(id): UrlPath<String>, Json(
         .filter_map(|rm| name.strip_prefix(rm.as_str()).and_then(|rest| rest.strip_prefix('/')).map(|b| (rm.as_str(), b)))
         .max_by_key(|(rm, _)| rm.len())
         .ok_or_else(|| bad(format!("{name} does not belong to a known remote")))?;
-    net_result(git::run(&r.path, &["push", remote, "--delete", valid_ref(branch)?], NETWORK_TIMEOUT).await?)
+    remote_cmd(&s, &r, &["push", "--progress", remote, "--delete", valid_ref(branch)?], q.job.as_deref()).await
 }
 
 #[derive(Deserialize)]
@@ -330,7 +331,7 @@ pub struct TagRefBody {
     remote: bool,
 }
 
-pub async fn delete_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<TagRefBody>) -> ApiResult {
+pub async fn delete_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>, Json(b): Json<TagRefBody>) -> ApiResult {
     let r = repo(&s, &id).await?;
     let name = valid_ref(b.name.as_deref().unwrap_or_default())?;
     let local_out = local(&r.path, &["tag", "-d", name]).await?;
@@ -338,15 +339,14 @@ pub async fn delete_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b):
         return net_result(local_out);
     }
     let remote = remote_or_err(&r.path).await?;
-    net_result(git::run(&r.path, &["push", &remote, "--delete", &format!("refs/tags/{name}")], NETWORK_TIMEOUT).await?)
+    remote_cmd(&s, &r, &["push", "--progress", &remote, "--delete", &format!("refs/tags/{name}")], q.job.as_deref()).await
 }
 
-pub async fn push_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<TagRefBody>) -> ApiResult {
+pub async fn push_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>, Json(b): Json<TagRefBody>) -> ApiResult {
     let r = repo(&s, &id).await?;
     let remote = remote_or_err(&r.path).await?;
-    let out = match b.name.as_deref() {
-        Some(name) => git::run(&r.path, &["push", &remote, &format!("refs/tags/{}", valid_ref(name)?)], NETWORK_TIMEOUT).await?,
-        None => git::run(&r.path, &["push", &remote, "--tags"], NETWORK_TIMEOUT).await?,
-    };
-    net_result(out)
+    match b.name.as_deref() {
+        Some(name) => remote_cmd(&s, &r, &["push", "--progress", &remote, &format!("refs/tags/{}", valid_ref(name)?)], q.job.as_deref()).await,
+        None => remote_cmd(&s, &r, &["push", "--progress", &remote, "--tags"], q.job.as_deref()).await,
+    }
 }
