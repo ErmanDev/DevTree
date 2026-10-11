@@ -145,3 +145,7 @@ DevTree can run git commands on your machine, so it:
 - only accepts file paths inside the repository, and only lets the conflict editor write to files that are currently conflicted.
 
 Git never prompts in a terminal (`GIT_TERMINAL_PROMPT=0`). Credentials typed into DevTree reach git through DevTree acting as a git credential helper (`devtree credential-helper get`). The secret travels in that one child process's environment, never on a command line or disk.
+
+## License
+
+[MIT](LICENSE). Contributions are accepted under the same license.

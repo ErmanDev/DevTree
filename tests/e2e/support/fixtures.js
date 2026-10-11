@@ -189,11 +189,21 @@ const test = base.test.extend({
     });
   },
 
-  /** Fails the test on any uncaught error in the page. */
-  page: async ({ page }, use) => {
+  /** Fails the test on any uncaught error in the page. When a test fails, prints DevTree's
+   *  console (every git command and its output) and the toasts it showed, to explain why. */
+  page: async ({ page }, use, testInfo) => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await use(page);
+    if (testInfo.status !== testInfo.expectedStatus) {
+      const tail = await page
+        .evaluate(() => ({
+          console: [...document.querySelectorAll("#consoleBody > *")].slice(-40).map((e) => e.textContent),
+          toasts: [...document.querySelectorAll(".toast")].map((e) => e.textContent),
+        }))
+        .catch(() => null);
+      if (tail) console.log(`--- DevTree state after "${testInfo.title}" failed ---\n${JSON.stringify(tail, null, 2)}`);
+    }
     base.expect(errors, "uncaught errors in the page").toEqual([]);
   },
 });

@@ -24,7 +24,7 @@ try() {
   APP=$!
   found=no
   colors=0
-  for _ in $(seq 30); do
+  for _ in $(seq 60); do
     sleep 1
     if ! kill -0 "$APP" 2>/dev/null; then
       echo "[$name] DevTree exited:"

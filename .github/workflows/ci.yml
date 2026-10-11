@@ -53,7 +53,9 @@ jobs:
         # throwaway runner.
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          scripts/desktop-smoke.sh
+          # Like a desktop session: without a D-Bus session bus, GTK/WebKit start-up waits ~25 s
+          # for D-Bus timeouts before the window appears.
+          dbus-run-session -- scripts/desktop-smoke.sh
 
       - uses: actions/setup-node@v5
         with:

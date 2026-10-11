@@ -3,6 +3,8 @@ name = "devtree"
 version = "0.1.0"
 description = "A lightweight, local GitKraken-style git client with a retro Claude-themed UI"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/ErmanDev/DevTree"
 
 [dependencies]
 axum = "0.8"
