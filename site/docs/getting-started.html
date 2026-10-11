@@ -17,6 +17,7 @@
     <div class="wrap">
       <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
       <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/install">Install</a>
         <a href="/docs/getting-started" aria-current="page">Get started</a>
         <a href="/docs/guide">User guide</a>
         <a href="/docs/security">Security</a>
@@ -34,7 +35,7 @@
     <nav class="toc" aria-label="On this page">
       <h4>ON THIS PAGE</h4>
       <a href="#requirements">Requirements</a>
-      <a href="#install">Install from source</a>
+      <a href="#install">Install</a>
       <a href="#run">Run DevTree</a>
       <a href="#options">Command-line options</a>
       <a href="#first-repo">Your first repository</a>
@@ -60,14 +61,10 @@
         <p>Ready-made binaries aren't published yet, so for now you build from source. It's one command.</p>
       </div>
 
-      <h2 id="install">Install from source</h2>
+      <h2 id="install">Install</h2>
+      <p>Follow the <a href="/docs/install">install guide</a> for step-by-step instructions for <a href="/docs/install#macos">macOS</a>, <a href="/docs/install#linux">Linux</a> or <a href="/docs/install#windows">Windows</a>. In short, once git and Rust are installed:</p>
 <pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
 <span class="p">$ </span>cd DevTree
-<span class="p">$ </span>cargo build --release</code></pre>
-      <p>The result is a single file, <code>target/release/devtree</code> (<code>devtree.exe</code> on Windows), about 2.5&nbsp;MB. The web UI is compiled into it, so you can copy it anywhere on your <code>PATH</code>:</p>
-<pre><code><span class="c"># Linux / macOS</span>
-<span class="p">$ </span>cp target/release/devtree ~/.local/bin/
-<span class="c"># or install with cargo</span>
 <span class="p">$ </span>cargo install --path .</code></pre>
 
       <h2 id="run">Run DevTree</h2>
@@ -122,10 +119,7 @@
       <p>DevTree runs ssh in batch mode, so it fails with a clear message instead of waiting on a prompt you can't see. If you've configured your own <code>core.sshCommand</code> or <code>GIT_SSH_COMMAND</code>, it is left alone.</p>
 
       <h2 id="update">Updating &amp; uninstalling</h2>
-<pre><code><span class="p">$ </span>cd DevTree
-<span class="p">$ </span>git pull
-<span class="p">$ </span>cargo build --release</code></pre>
-      <p>To uninstall, delete the <code>devtree</code> binary and the <code>~/.devtree</code> folder (it only holds the list of imported repositories). Your repositories are never modified by removing DevTree.</p>
+      <p>See <a href="/docs/install#update">Updating</a> and <a href="/docs/install#uninstall">Uninstalling</a> in the install guide. Removing DevTree never modifies your repositories.</p>
 
       <h2 id="troubleshooting">Troubleshooting</h2>
       <h4>"cannot listen on 127.0.0.1:7878: Address already in use"</h4>
@@ -140,7 +134,7 @@
       <p>Open the <b>Console</b> at the bottom of the window. It shows every git command DevTree ran and its full output. Then <a href="https://github.com/ErmanDev/DevTree/issues">open an issue</a> with what you see.</p>
 
       <nav class="pager" aria-label="Pages">
-        <a href="/">← Home</a>
+        <a href="/docs/install">← Install</a>
         <a href="/docs/guide">User guide →</a>
       </nav>
     </article>
@@ -149,7 +143,7 @@
   <footer class="foot">
     <div class="wrap">
       <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
-      <span><a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
     </div>
   </footer>
 </body>

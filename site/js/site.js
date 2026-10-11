@@ -48,6 +48,39 @@
       pre.appendChild(btn);
     }
 
+    // Install page: show one operating system at a time, guessing the visitor's.
+    const tabs = [...document.querySelectorAll(".os-tabs [data-os]")];
+    const panels = [...document.querySelectorAll(".os-panel")];
+    if (tabs.length && panels.length) {
+      root.classList.add("tabs-on");
+      const select = (os) => {
+        for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.os === os));
+        for (const p of panels) p.hidden = p.dataset.os !== os;
+      };
+      const fromHash = () => {
+        const target = location.hash && document.getElementById(location.hash.slice(1));
+        const panel = target && target.closest(".os-panel");
+        return panel ? panel.dataset.os : null;
+      };
+      const platform = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent).toLowerCase();
+      const guess = platform.includes("win") ? "windows" : platform.includes("mac") ? "macos" : "linux";
+      select(fromHash() || guess);
+      for (const t of tabs) {
+        t.addEventListener("click", (e) => {
+          e.preventDefault();
+          select(t.dataset.os);
+          history.replaceState(null, "", "#" + t.dataset.os);
+        });
+      }
+      window.addEventListener("hashchange", () => {
+        const os = fromHash();
+        if (os) {
+          select(os);
+          document.getElementById(location.hash.slice(1)).scrollIntoView();
+        }
+      });
+    }
+
     // Highlight the section being read in the table of contents.
     const links = [...document.querySelectorAll(".toc a[href^='#']")];
     if (links.length && "IntersectionObserver" in window) {

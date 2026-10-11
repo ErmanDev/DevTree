@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install · DevTree</title>
+  <meta name="description" content="Install DevTree on macOS, Linux or Windows: set up git and Rust, build from source, and run it. Includes updating, uninstalling and troubleshooting.">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/install" aria-current="page">Install</a>
+        <a href="/docs/getting-started">Get started</a>
+        <a href="/docs/guide">User guide</a>
+        <a href="/docs/security">Security</a>
+        <a href="/docs/contributing">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page">
+      <h4>ON THIS PAGE</h4>
+      <a href="#choose">Choose your system</a>
+      <a href="#macos">macOS</a>
+      <a href="#linux">Linux</a>
+      <a class="sub" href="#wsl">WSL</a>
+      <a href="#windows">Windows</a>
+      <a href="#check">Check it works</a>
+      <a href="#update">Updating</a>
+      <a href="#uninstall">Uninstalling</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </nav>
+
+    <article class="article">
+      <h1>Install</h1>
+      <p class="lede">Step-by-step setup for macOS, Linux and Windows. You install git and Rust, then build DevTree from source with one command.</p>
+
+      <div class="note"><b>Why build from source?</b>
+        <p>Ready-made downloads aren't published yet. Building takes a few minutes the first time. You get a single <code>devtree</code> program of about 2.5&nbsp;MB, with the web UI built in.</p>
+      </div>
+
+      <h2 id="choose">Choose your system</h2>
+      <div class="os-tabs" role="tablist" aria-label="Operating system">
+        <a role="tab" href="#macos" data-os="macos">⌘ macOS</a>
+        <a role="tab" href="#linux" data-os="linux">🐧 Linux</a>
+        <a role="tab" href="#windows" data-os="windows">⊞ Windows</a>
+      </div>
+
+      <section class="os-panel" id="macos" data-os="macos" role="tabpanel">
+        <h2>macOS</h2>
+        <p>Works on Apple Silicon and Intel Macs. Open the <b>Terminal</b> app and run the commands below.</p>
+
+        <h3>1. Install git and the build tools</h3>
+<pre><code><span class="p">$ </span>xcode-select --install</code></pre>
+        <p>This installs Apple's Command Line Tools. They include git and the linker Rust needs. If it says they're already installed, go to the next step. If you use <a href="https://brew.sh">Homebrew</a>, <code>brew install git</code> gives you a newer git as well.</p>
+
+        <h3>2. Install Rust</h3>
+<pre><code><span class="p">$ </span>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</code></pre>
+        <p>Press <kbd>Enter</kbd> to accept the default install. Then <b>open a new terminal window</b> so the <code>cargo</code> command is found.</p>
+
+        <h3>3. Build and install DevTree</h3>
+<pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
+<span class="p">$ </span>cd DevTree
+<span class="p">$ </span>cargo install --path .</code></pre>
+        <p>This builds DevTree and puts it in <code>~/.cargo/bin</code>, which Rust already added to your <code>PATH</code>.</p>
+
+        <h3>4. Run it</h3>
+<pre><code><span class="p">$ </span>devtree</code></pre>
+        <p>Your default browser opens at <code>http://localhost:7878</code>. Keep the terminal open while you use DevTree, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> in it to stop.</p>
+      </section>
+
+      <section class="os-panel" id="linux" data-os="linux" role="tabpanel">
+        <h2>Linux</h2>
+        <p>Any recent 64-bit distribution works, on x86-64 or ARM.</p>
+
+        <h3>1. Install git, curl and a C compiler</h3>
+        <p>Rust uses your system's C compiler to link programs. Pick your distribution:</p>
+<pre><code><span class="c"># Debian, Ubuntu, Mint, Pop!_OS</span>
+<span class="p">$ </span>sudo apt update &amp;&amp; sudo apt install -y git curl build-essential
+
+<span class="c"># Fedora, RHEL, Rocky</span>
+<span class="p">$ </span>sudo dnf install -y git curl gcc
+
+<span class="c"># Arch, Manjaro</span>
+<span class="p">$ </span>sudo pacman -S --needed git curl base-devel
+
+<span class="c"># openSUSE</span>
+<span class="p">$ </span>sudo zypper install -y git curl gcc</code></pre>
+
+        <h3>2. Install Rust</h3>
+<pre><code><span class="p">$ </span>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+<span class="p">$ </span>. "$HOME/.cargo/env"</code></pre>
+        <div class="warn"><b>Use rustup, not your distribution's Rust</b>
+          <p>DevTree needs Rust 1.85 or newer (the 2024 edition). The <code>rustc</code>/<code>cargo</code> packages of many distributions are older. rustup always installs the current version.</p>
+        </div>
+
+        <h3>3. Build and install DevTree</h3>
+<pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
+<span class="p">$ </span>cd DevTree
+<span class="p">$ </span>cargo install --path .</code></pre>
+        <p>DevTree is installed to <code>~/.cargo/bin/devtree</code>, which is on your <code>PATH</code> after the step above.</p>
+
+        <h3>4. Run it</h3>
+<pre><code><span class="p">$ </span>devtree</code></pre>
+        <p>DevTree opens your browser with <code>xdg-open</code>. On a machine without a desktop, run <code>devtree --no-open</code> and open <code>http://localhost:7878</code> yourself.</p>
+
+        <h3 id="wsl">Windows Subsystem for Linux (WSL)</h3>
+        <p>The Linux steps work the same inside WSL&nbsp;2. Start DevTree with <code>devtree --no-open</code>, then open <code>http://localhost:7878</code> in your Windows browser. WSL forwards <code>localhost</code> to Windows.</p>
+        <p>Use WSL for repositories stored inside WSL (under <code>~</code>). For repositories on your Windows drive (<code>/mnt/c/…</code>), git is much faster if you <a href="#windows">install DevTree on Windows</a> instead.</p>
+      </section>
+
+      <section class="os-panel" id="windows" data-os="windows" role="tabpanel">
+        <h2>Windows</h2>
+        <p>Works on Windows 10 and 11. Run the commands in <b>PowerShell</b> or <b>Windows Terminal</b>.</p>
+
+        <h3>1. Install Git for Windows</h3>
+<pre><code><span class="p">PS&gt; </span>winget install --id Git.Git -e --source winget</code></pre>
+        <p>Or download the installer from <a href="https://git-scm.com/download/win">git-scm.com</a> and keep the default options. It includes <b>Git Credential Manager</b>, which can save your GitHub sign-in.</p>
+
+        <h3>2. Install Rust</h3>
+        <p>Rust on Windows needs Microsoft's C++ build tools. The easiest way gets both:</p>
+        <ol>
+          <li>Download and run <b>rustup-init.exe</b> (64-bit) from <a href="https://rustup.rs">rustup.rs</a>.</li>
+          <li>If it says the Visual Studio C++ build tools are missing, choose <b>1) Quick install via the Visual Studio Community installer</b> and let it finish.</li>
+          <li>Back in rustup, press <kbd>Enter</kbd> to accept the default install.</li>
+        </ol>
+        <p>Prefer the command line? This does the same with winget:</p>
+<pre><code><span class="p">PS&gt; </span>winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+<span class="p">PS&gt; </span>winget install --id Rustlang.Rustup -e</code></pre>
+        <p>Then <b>close and reopen your terminal</b> so <code>git</code> and <code>cargo</code> are found.</p>
+
+        <h3>3. Build and install DevTree</h3>
+<pre><code><span class="p">PS&gt; </span>git clone https://github.com/ErmanDev/DevTree.git
+<span class="p">PS&gt; </span>cd DevTree
+<span class="p">PS&gt; </span>cargo install --path .</code></pre>
+        <p>DevTree is installed as <code>%USERPROFILE%\.cargo\bin\devtree.exe</code>, which rustup added to your <code>PATH</code>.</p>
+
+        <h3>4. Run it</h3>
+<pre><code><span class="p">PS&gt; </span>devtree</code></pre>
+        <p>Your default browser opens at <code>http://localhost:7878</code>. Keep the terminal open while you use DevTree, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> in it to stop. If Windows Defender Firewall asks about DevTree, you can click <b>Cancel</b>: DevTree only accepts connections from your own computer.</p>
+      </section>
+
+      <h2 id="check">Check it works</h2>
+      <p>If something goes wrong, first check each tool is found and recent enough:</p>
+<pre><code><span class="p">$ </span>git --version      <span class="c"># 2.30 or newer</span>
+<span class="p">$ </span>cargo --version    <span class="c"># 1.85 or newer</span>
+<span class="p">$ </span>devtree --help     <span class="c"># shows DevTree's options</span></code></pre>
+      <p>Then continue with <a href="/docs/getting-started#first-repo">your first repository</a>.</p>
+
+      <h2 id="update">Updating</h2>
+      <p>Stop DevTree first (<kbd>Ctrl</kbd>+<kbd>C</kbd>), then in your DevTree folder:</p>
+<pre><code><span class="p">$ </span>git pull
+<span class="p">$ </span>cargo install --path . --force</code></pre>
+      <p>Your list of imported repositories is kept.</p>
+
+      <h2 id="uninstall">Uninstalling</h2>
+<pre><code><span class="p">$ </span>cargo uninstall devtree</code></pre>
+      <p>Then delete DevTree's data folder, which only holds your list of imported repositories: <code>~/.devtree</code> on macOS and Linux, <code>%USERPROFILE%\.devtree</code> on Windows. Your repositories themselves are never touched. If you installed Rust only for DevTree, <code>rustup self uninstall</code> removes it too.</p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <h4>"command not found: devtree" / "devtree is not recognized"</h4>
+      <p>Your terminal was opened before Rust was installed. Open a new one. If it still fails, add <code>~/.cargo/bin</code> (Windows: <code>%USERPROFILE%\.cargo\bin</code>) to your <code>PATH</code>.</p>
+      <h4>"linker `cc` not found" (Linux)</h4>
+      <p>The C compiler is missing. Install it with step 1 of the <a href="#linux">Linux</a> instructions.</p>
+      <h4>"linker `link.exe` not found" (Windows)</h4>
+      <p>The Visual Studio C++ build tools are missing. Run the <code>Microsoft.VisualStudio.2022.BuildTools</code> command from step 2 of the <a href="#windows">Windows</a> instructions, or add the <b>Desktop development with C++</b> workload in the Visual Studio Installer.</p>
+      <h4>"xcrun: error: invalid active developer path" (macOS)</h4>
+      <p>A macOS update removed the Command Line Tools. Run <code>xcode-select --install</code> again.</p>
+      <h4>"feature `edition2024` is required"</h4>
+      <p>Your Rust is too old. If you installed it with rustup, run <code>rustup update</code>. If it came from your Linux distribution, remove that package and install Rust with rustup.</p>
+      <h4>"Access is denied" while updating (Windows)</h4>
+      <p>DevTree is still running, so Windows won't let cargo replace <code>devtree.exe</code>. Stop it and run the command again.</p>
+      <p>For problems after DevTree starts, see <a href="/docs/getting-started#troubleshooting">Getting started → Troubleshooting</a>.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a href="/">← Home</a>
+        <a href="/docs/getting-started">Getting started →</a>
+      </nav>
+    </article>
+  </div>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>

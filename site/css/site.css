@@ -311,6 +311,22 @@ td code { white-space: nowrap; }
 
 /* ---------------------------------------------------------------- narrow screens */
 
+/* Install page: OS tabs. Without JavaScript every panel is shown. */
+.os-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 28px; }
+.os-tabs a {
+  font: 600 14px var(--mono);
+  padding: 9px 16px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.os-tabs a:hover { border-color: var(--accent); }
+.os-tabs a[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tabs-on .os-panel > h2:first-child { margin-top: 0; }
+
 @media (max-width: 960px) {
   .features { grid-template-columns: 1fr 1fr; }
   .showcase, .showcase.flip, .install { grid-template-columns: 1fr; gap: 20px; }
