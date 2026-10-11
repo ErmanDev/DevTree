@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting started · DevTree</title>
+  <meta name="description" content="Install DevTree from source, run it, import or clone your first repository, and sign in to GitHub over HTTPS or SSH.">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/getting-started" aria-current="page">Get started</a>
+        <a href="/docs/guide">User guide</a>
+        <a href="/docs/security">Security</a>
+        <a href="/docs/contributing">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page">
+      <h4>ON THIS PAGE</h4>
+      <a href="#requirements">Requirements</a>
+      <a href="#install">Install from source</a>
+      <a href="#run">Run DevTree</a>
+      <a href="#options">Command-line options</a>
+      <a href="#first-repo">Your first repository</a>
+      <a href="#sign-in">Signing in to remotes</a>
+      <a class="sub" href="#https">HTTPS &amp; tokens</a>
+      <a class="sub" href="#ssh">SSH keys</a>
+      <a href="#update">Updating &amp; uninstalling</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </nav>
+
+    <article class="article">
+      <h1>Getting started</h1>
+      <p class="lede">Build DevTree, open it in your browser, and point it at a repository. It takes about a minute.</p>
+
+      <h2 id="requirements">Requirements</h2>
+      <ul>
+        <li><b>git</b> 2.30 or newer, on your <code>PATH</code>. DevTree runs your installed git, so your config, SSH keys and credential helper all apply.</li>
+        <li><b>Rust</b>, to build from source: a recent stable toolchain (DevTree uses the 2024 edition). Install it with <a href="https://www.rust-lang.org/tools/install">rustup</a>.</li>
+        <li><b>A modern browser</b>: Chrome, Edge, Firefox or Safari.</li>
+      </ul>
+      <p>DevTree runs on Linux, macOS and Windows. All three are tested on every change.</p>
+      <div class="note"><b>Prebuilt downloads</b>
+        <p>Ready-made binaries aren't published yet, so for now you build from source. It's one command.</p>
+      </div>
+
+      <h2 id="install">Install from source</h2>
+<pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
+<span class="p">$ </span>cd DevTree
+<span class="p">$ </span>cargo build --release</code></pre>
+      <p>The result is a single file, <code>target/release/devtree</code> (<code>devtree.exe</code> on Windows), about 2.5&nbsp;MB. The web UI is compiled into it, so you can copy it anywhere on your <code>PATH</code>:</p>
+<pre><code><span class="c"># Linux / macOS</span>
+<span class="p">$ </span>cp target/release/devtree ~/.local/bin/
+<span class="c"># or install with cargo</span>
+<span class="p">$ </span>cargo install --path .</code></pre>
+
+      <h2 id="run">Run DevTree</h2>
+<pre><code><span class="p">$ </span>devtree
+<span class="c">🌳 DevTree running at http://localhost:7878  (Ctrl+C to stop)</span></code></pre>
+      <p>DevTree starts a small web server on your own machine and opens your browser. Only your computer can reach it: it listens on <code>127.0.0.1</code>. Leave the terminal open while you work, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop it.</p>
+      <p>From a clone of the source you can also just run <code>cargo run --release</code>.</p>
+
+      <h2 id="options">Command-line options</h2>
+      <table>
+        <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>--port &lt;n&gt;</code></td><td><code>7878</code></td><td>Port to listen on (always on <code>127.0.0.1</code>). <code>0</code> picks any free port.</td></tr>
+          <tr><td><code>--data-dir &lt;path&gt;</code></td><td><code>~/.devtree</code></td><td>Where DevTree keeps its list of imported repositories. You can also set <code>DEVTREE_HOME</code>.</td></tr>
+          <tr><td><code>--clone-dir &lt;path&gt;</code></td><td><code>~/devtree-repos</code></td><td>Default folder for repositories you clone from a URL.</td></tr>
+          <tr><td><code>--no-open</code></td><td></td><td>Don't open the browser on start.</td></tr>
+          <tr><td><code>--help</code></td><td></td><td>Show usage.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="first-repo">Your first repository</h2>
+      <p>Click <b>+ ADD</b> in the sidebar (or <b>Add repository</b> on the empty screen). You can either:</p>
+      <ul>
+        <li><b>Open a local repo:</b> browse to a folder (git repositories are marked <span style="color:var(--accent)">●</span>) and click <b>Import</b>, or double-click it.</li>
+        <li><b>Clone from a URL:</b> paste an HTTPS or SSH URL. It's cloned into your clone folder, with live progress and a Cancel button.</li>
+      </ul>
+      <p>DevTree remembers imported repositories and reopens the last one next time. Removing a repository from the list (✕ next to its name) never touches its files.</p>
+      <div class="tip"><b>Tip</b>
+        <p>Press <kbd>/</kbd> to filter the graph, <kbd>j</kbd>/<kbd>k</kbd> to move between commits, and <kbd>r</kbd> to refresh. See all <a href="/docs/guide#shortcuts">keyboard shortcuts</a>.</p>
+      </div>
+
+      <h2 id="sign-in">Signing in to remotes</h2>
+      <p>Public repositories need no sign-in. For private ones, DevTree uses whatever already works with git on your machine, and asks only when it has to.</p>
+
+      <h3 id="https">HTTPS &amp; personal access tokens</h3>
+      <p>When a server asks for credentials, DevTree shows a <b>Sign in to github.com</b> dialog and retries once you've entered them. GitHub, GitLab and Bitbucket don't accept your account password here. They need a <b>personal access token</b>:</p>
+      <ol>
+        <li>On GitHub, open <b>Settings → Developer settings → Personal access tokens → Fine-grained tokens</b> and generate a token.</li>
+        <li>Give it access to the repositories you need, with <b>Contents: Read and write</b> if you want to push.</li>
+        <li>In DevTree's dialog, enter your username and paste the token as the password.</li>
+      </ol>
+      <p>Credentials are kept <b>in memory only</b>: for one operation, or until DevTree closes if you tick "Remember". If you have a git credential manager installed, it saves them permanently as usual. See <a href="/docs/security#credentials">how credentials are handled</a>.</p>
+      <div class="note"><b>A mistyped repo name also asks you to sign in</b>
+        <p>GitHub answers the same way for private and non-existent repositories, so a typo in a clone URL also shows the sign-in dialog. Check the URL first.</p>
+      </div>
+
+      <h3 id="ssh">SSH keys</h3>
+      <p>SSH URLs such as <code>git@github.com:you/repo.git</code> use your normal SSH setup, with no dialog. If the server rejects your key, DevTree explains what to check:</p>
+<pre><code><span class="p">$ </span>ssh-add -l              <span class="c"># is a key loaded?</span>
+<span class="p">$ </span>ssh-add                 <span class="c"># load your key (asks for its passphrase)</span>
+<span class="p">$ </span>ssh -T git@github.com   <span class="c"># accept the host key once, test the login</span></code></pre>
+      <p>DevTree runs ssh in batch mode, so it fails with a clear message instead of waiting on a prompt you can't see. If you've configured your own <code>core.sshCommand</code> or <code>GIT_SSH_COMMAND</code>, it is left alone.</p>
+
+      <h2 id="update">Updating &amp; uninstalling</h2>
+<pre><code><span class="p">$ </span>cd DevTree
+<span class="p">$ </span>git pull
+<span class="p">$ </span>cargo build --release</code></pre>
+      <p>To uninstall, delete the <code>devtree</code> binary and the <code>~/.devtree</code> folder (it only holds the list of imported repositories). Your repositories are never modified by removing DevTree.</p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <h4>"cannot listen on 127.0.0.1:7878: Address already in use"</h4>
+      <p>Another DevTree (or another program) is using the port. Stop it, or start with <code>devtree --port 7979</code>.</p>
+      <h4>The browser doesn't open</h4>
+      <p>Open <code>http://localhost:7878</code> yourself. On Linux, DevTree uses <code>xdg-open</code>.</p>
+      <h4>"failed to start git"</h4>
+      <p>git isn't on the <code>PATH</code> of the terminal you started DevTree from. Check with <code>git --version</code>.</p>
+      <h4>Pull says "Not possible to fast-forward"</h4>
+      <p>You chose <b>Fast-forward only</b> in the <b>Pull ▾</b> menu, but both you and the remote have new commits. Pick <b>Fast-forward if possible</b> (merges when needed) or <b>Rebase</b> instead.</p>
+      <h4>Something else</h4>
+      <p>Open the <b>Console</b> at the bottom of the window. It shows every git command DevTree ran and its full output. Then <a href="https://github.com/ErmanDev/DevTree/issues">open an issue</a> with what you see.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a href="/">← Home</a>
+        <a href="/docs/guide">User guide →</a>
+      </nav>
+    </article>
+  </div>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>

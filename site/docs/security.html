@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security &amp; privacy · DevTree</title>
+  <meta name="description" content="How DevTree protects your machine and your data: localhost-only server, request guards, no shell, in-memory credentials, optional avatars, no telemetry.">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/getting-started">Get started</a>
+        <a href="/docs/guide">User guide</a>
+        <a href="/docs/security" aria-current="page">Security</a>
+        <a href="/docs/contributing">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page">
+      <h4>ON THIS PAGE</h4>
+      <a href="#model">The model</a>
+      <a href="#server">A server only you can reach</a>
+      <a href="#commands">Running git safely</a>
+      <a href="#credentials">Credentials</a>
+      <a href="#avatars">Author pictures</a>
+      <a href="#data">What DevTree stores</a>
+      <a href="#network">Network connections</a>
+      <a href="#reporting">Reporting a vulnerability</a>
+    </nav>
+
+    <article class="article">
+      <h1>Security &amp; privacy</h1>
+      <p class="lede">DevTree runs git commands on your computer on behalf of a web page. This page explains how it keeps that safe, and what it does and doesn't send anywhere.</p>
+
+      <h2 id="model">The model</h2>
+      <p>DevTree is a local program with a web UI. The page in your browser asks the DevTree server, running on your machine, to run git. The server must therefore only ever take orders from <i>that</i> page:</p>
+      <ul>
+        <li>not from other computers on your network</li>
+        <li>not from other websites open in your browser</li>
+        <li>not through input crafted to sneak extra options into a git command</li>
+      </ul>
+
+      <h2 id="server">A server only you can reach</h2>
+      <ul>
+        <li><b>Loopback only.</b> The server listens on <code>127.0.0.1</code>, so other machines can't connect to it.</li>
+        <li><b>Host check.</b> Requests whose <code>Host</code> isn't <code>localhost</code>, <code>127.0.0.1</code> or <code>[::1]</code> are refused. This blocks <i>DNS rebinding</i>, where a malicious site points its own domain name at your machine.</li>
+        <li><b>A custom header on every API call.</b> The API rejects requests without an <code>X-DevTree</code> header. Browsers won't let another website add a custom header to a request to a different site without the server's permission (a CORS preflight), and DevTree never gives it. So a website you visit can't drive your git, even though it can reach <code>localhost</code>.</li>
+        <li><b>Sandboxed previews.</b> File contents served for image previews carry <code>Content-Security-Policy: sandbox</code> and <code>nosniff</code>, so an SVG in a repository can never run script in DevTree's page.</li>
+      </ul>
+
+      <h2 id="commands">Running git safely</h2>
+      <ul>
+        <li><b>No shell.</b> git is started directly with a list of arguments, never through a shell, so characters like <code>;</code> or <code>$( )</code> in names have no special meaning.</li>
+        <li><b>No option injection.</b> Branch, tag and remote names, commit IDs and URLs that start with <code>-</code> (for example <code>--upload-pack=…</code>) are rejected. File paths always come after <code>--</code>.</li>
+        <li><b>Paths stay inside the repository.</b> File paths must be relative and can't contain <code>..</code>. The conflict editor may only write files that are actually in conflict.</li>
+        <li><b>No hidden prompts.</b> git never prompts in a terminal (<code>GIT_TERMINAL_PROMPT=0</code>), and ssh runs in batch mode unless you've configured your own ssh command. Long network commands have a timeout, and Cancel stops git together with its helper processes.</li>
+      </ul>
+
+      <h2 id="credentials">Credentials</h2>
+      <p>When a remote asks you to sign in, here is what happens to the username and token you type:</p>
+      <ul>
+        <li>They are kept <b>in memory only</b>, never written to disk by DevTree. They're used for one operation, or until DevTree closes if you tick "Remember".</li>
+        <li>They reach git through DevTree itself acting as a <a href="https://git-scm.com/docs/gitcredentials">git credential helper</a> (<code>devtree credential-helper get</code>). The secret is passed in that one child process's environment, never on a command line where other programs could see it.</li>
+        <li>Your own credential helpers (for example Git Credential Manager or the macOS keychain) are asked first, and may save what you type, exactly as they would for plain git.</li>
+      </ul>
+
+      <h2 id="avatars">Author pictures</h2>
+      <p>Author chips show pictures, which come from other services:</p>
+      <ul>
+        <li>For GitHub "noreply" addresses, your browser loads the picture from <code>avatars.githubusercontent.com</code> or <code>github.com</code>.</li>
+        <li>For other addresses, it asks <code>gravatar.com</code> for a picture using a <b>SHA-256 hash</b> of the commit author's email, not the email itself.</li>
+      </ul>
+      <p>Requests are sent without a referrer. Gravatar can still recognize a hash it already knows. If you'd rather your browser didn't contact these services, click <b>☺</b> in the AUTHOR column header. DevTree then shows initials only and makes no such requests. The setting is remembered.</p>
+
+      <h2 id="data">What DevTree stores</h2>
+      <ul>
+        <li><code>~/.devtree/repos.json</code> (or your <code>--data-dir</code>): the list of repositories you imported (name and path). Nothing else.</li>
+        <li>In your browser's local storage: UI preferences such as the theme, pull mode, auto-fetch interval, diff layout and the last opened repository.</li>
+        <li>During an interactive rebase, <code>.git/devtree-reword.json</code> in that repository holds your new commit messages. It is removed when the rebase ends.</li>
+      </ul>
+      <p>There is <b>no telemetry</b>, no analytics, no crash reporting and no account.</p>
+
+      <h2 id="network">Network connections</h2>
+      <p>DevTree itself only ever talks to:</p>
+      <ul>
+        <li><b>your git remotes</b>, when you (or auto-fetch) fetch, pull, push or clone</li>
+        <li><b>avatar services</b>, as described above, unless you turn pictures off</li>
+        <li><b>Google Fonts</b>, which the UI loads its retro fonts from. Without it, it falls back to your system fonts.</li>
+      </ul>
+      <p>Auto-fetch can be turned off in the <b>Fetch ▾</b> menu.</p>
+
+      <h2 id="reporting">Reporting a vulnerability</h2>
+      <p>Please don't open a public issue for security problems. Use GitHub's <a href="https://github.com/ErmanDev/DevTree/security/advisories/new">private vulnerability reporting</a> for the repository instead. Include what you found, how to reproduce it, and which version you used.</p>
+
+      <nav class="pager" aria-label="Pages">
+        <a href="/docs/guide">← User guide</a>
+        <a href="/docs/contributing">Contribute →</a>
+      </nav>
+    </article>
+  </div>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>

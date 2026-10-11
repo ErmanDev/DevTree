@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architecture &amp; contributing · DevTree</title>
+  <meta name="description" content="How DevTree is built — Rust server, git CLI, lane layout, helper modes, HTTP API — and how to build, test and contribute.">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/getting-started">Get started</a>
+        <a href="/docs/guide">User guide</a>
+        <a href="/docs/security">Security</a>
+        <a href="/docs/contributing" aria-current="page">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page">
+      <h4>ON THIS PAGE</h4>
+      <a href="#ways">Ways to help</a>
+      <a href="#setup">Development setup</a>
+      <a href="#architecture">Architecture</a>
+      <a class="sub" href="#backend">Backend</a>
+      <a class="sub" href="#frontend">Frontend</a>
+      <a class="sub" href="#graph-layout">Graph layout</a>
+      <a class="sub" href="#helpers">Helper modes</a>
+      <a href="#api">HTTP API</a>
+      <a href="#testing">Testing</a>
+      <a href="#style">Code style</a>
+      <a href="#pull-requests">Pull requests</a>
+      <a href="#docs-site">This website</a>
+    </nav>
+
+    <article class="article">
+      <h1>Architecture &amp; contributing</h1>
+      <p class="lede">DevTree is small enough to read in an afternoon: a Rust server that runs git, and a dependency-free web UI. Here is how it fits together, and how to work on it.</p>
+
+      <h2 id="ways">Ways to help</h2>
+      <ul>
+        <li><b>Try it on your repositories</b> and <a href="https://github.com/ErmanDev/DevTree/issues">report what breaks</a>, including the Console output if it helps.</li>
+        <li><b>Fix a bug or build a feature</b>. Open an issue first for bigger changes, so we can agree on the approach.</li>
+        <li><b>Improve these docs</b>: they live in <code>site/</code> in the same repository.</li>
+      </ul>
+
+      <h2 id="setup">Development setup</h2>
+<pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
+<span class="p">$ </span>cd DevTree
+<span class="p">$ </span>cargo run -- --port 7979   <span class="c"># debug build, on another port</span></code></pre>
+      <p>The UI files in <code>web/</code> are compiled into the binary with <code>include_str!</code>, so rebuild (or re-run <code>cargo run</code>) after editing them.</p>
+
+      <h2 id="architecture">Architecture</h2>
+      <p>The browser talks JSON to a local <a href="https://github.com/tokio-rs/axum">axum</a> server. The server runs the real <code>git</code> program for every operation and parses its machine-readable output. There is no libgit2 and no database.</p>
+
+      <h3 id="backend">Backend (<code>src/</code>)</h3>
+      <table>
+        <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>main.rs</code></td><td>Startup, flags, routes, the localhost and header guards, repository, graph, status, diff and pull/push handlers. It also dispatches the helper modes.</td></tr>
+          <tr><td><code>api.rs</code></td><td>Shared handler plumbing: app state, the JSON error type, and input validation (refs, SHAs, paths).</td></tr>
+          <tr><td><code>git.rs</code></td><td>Runs git (timeouts, cancel, streamed progress, killing the whole process tree). It also parses log, status, refs, blame and name-status output, and detects in-progress operations.</td></tr>
+          <tr><td><code>graph.rs</code></td><td>Lane layout for the commit graph (see below).</td></tr>
+          <tr><td><code>actions.rs</code></td><td>Conflicts, discard, stash, merge/rebase, branches, tags, cherry-pick/revert/reset, remotes, file previews, applying patches.</td></tr>
+          <tr><td><code>explore.rs</code></td><td>File history, blame, search across history, compare.</td></tr>
+          <tr><td><code>rebase.rs</code></td><td>Interactive rebase: the plan endpoint and the editor helper modes.</td></tr>
+          <tr><td><code>net.rs</code></td><td>Network commands: progress jobs, cancel, the per-repository lock, in-memory credentials, and recognizing sign-in failures.</td></tr>
+          <tr><td><code>store.rs</code></td><td>The imported-repository list (<code>repos.json</code>).</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="frontend">Frontend (<code>web/</code>)</h3>
+      <p>Plain HTML, CSS and JavaScript, with no framework, bundler or npm packages at runtime.</p>
+      <ul>
+        <li><code>app.js</code>: state, rendering, dialogs, the graph's windowed SVG drawing, the conflict and rebase editors.</li>
+        <li><code>diff.js</code>: the diff parser and renderer, the small syntax highlighter, word-level diffs, and the patch builder for partial staging. It also loads in Node, which is how it's tested.</li>
+      </ul>
+
+      <h3 id="graph-layout">Graph layout</h3>
+      <p>The server lays out the graph so the browser only draws it:</p>
+      <ul>
+        <li>Commits arrive in topological order (children first). <code>graph.rs</code> keeps a list of <i>lanes</i>, each waiting for a particular commit.</li>
+        <li>A commit takes the leftmost lane waiting for it. Other lanes waiting for it curve in, and lanes it isn't involved with pass straight through.</li>
+        <li>Its first parent continues down the same column, and extra parents get new lanes.</li>
+        <li>Each row comes back with its column, color and line segments. Because lanes never move sideways, the browser can draw any window of rows on its own. That's what makes huge histories fast.</li>
+      </ul>
+
+      <h3 id="helpers">Helper modes</h3>
+      <p>git sometimes needs to call a program back. DevTree <i>is</i> that program, run in a special mode:</p>
+      <table>
+        <thead><tr><th>Mode</th><th>Used as</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>devtree credential-helper get</code></td><td><code>credential.helper</code></td><td>Answers git's sign-in question with credentials typed into the UI (passed via the environment).</td></tr>
+          <tr><td><code>devtree write-todo &lt;file&gt;</code></td><td><code>GIT_SEQUENCE_EDITOR</code></td><td>Writes the interactive-rebase plan you built.</td></tr>
+          <tr><td><code>devtree edit-message &lt;file&gt;</code></td><td><code>GIT_EDITOR</code></td><td>Fills in reworded commit messages during a rebase. Otherwise it leaves the message unchanged.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="api">HTTP API</h2>
+      <p>All routes are under <code>/api</code>, need the <code>X-DevTree: 1</code> header and speak JSON. Errors look like <code>{"error": "…"}</code>. A remote sign-in failure returns <code>401</code> with an <code>auth</code> object, and a cancelled command returns <code>409</code>. Network routes accept <code>?job=&lt;id&gt;</code> for live progress via <code>/api/jobs/&lt;id&gt;</code>.</p>
+      <table>
+        <thead><tr><th>Area</th><th>Routes</th></tr></thead>
+        <tbody>
+          <tr><td>Repositories</td><td><code>GET/POST /repos</code>, <code>POST /repos/clone</code>, <code>DELETE /repos/{id}</code>, <code>GET /fs</code></td></tr>
+          <tr><td>Views</td><td><code>graph</code>, <code>status</code>, <code>branches</code>, <code>remotes</code>, <code>commit/{sha}</code>, <code>commit/{sha}/diff</code>, <code>diff</code>, <code>blob</code>, <code>file</code></td></tr>
+          <tr><td>Working tree</td><td><code>stage</code>, <code>unstage</code>, <code>apply</code>, <code>discard</code>, <code>commit</code>, <code>stash</code>, <code>stash/{n}/{apply|pop|drop}</code></td></tr>
+          <tr><td>Branches &amp; tags</td><td><code>checkout</code>, <code>branch</code>, <code>branch/{delete|rename|upstream}</code>, <code>tag</code>, <code>tag/{delete|push}</code></td></tr>
+          <tr><td>History editing</td><td><code>merge</code>, <code>rebase</code>, <code>rebase/plan</code>, <code>rebase/interactive</code>, <code>cherry-pick</code>, <code>revert</code>, <code>reset</code>, <code>operation/{continue|skip|abort}</code>, <code>resolve</code></td></tr>
+          <tr><td>Remotes</td><td><code>fetch</code>, <code>pull</code>, <code>push</code>, <code>remote/{add|remove|rename|set-url}</code>, <code>remote-net/{fetch|prune}</code>, <code>/credentials</code>, <code>/jobs/{id}</code>, <code>/jobs/{id}/cancel</code></td></tr>
+          <tr><td>Exploring</td><td><code>file-history</code>, <code>blame</code>, <code>search</code>, <code>compare</code>, <code>compare/diff</code></td></tr>
+        </tbody>
+      </table>
+      <p>Repository routes are <code>/api/repos/{id}/…</code>. The handlers in <code>src/</code> document their request bodies.</p>
+
+      <h2 id="testing">Testing</h2>
+<pre><code><span class="p">$ </span>cargo test                    <span class="c"># unit tests (parsers, lanes, conflict detection)</span>
+<span class="p">$ </span>cargo build                   <span class="c"># the end-to-end tests drive target/debug/devtree</span>
+<span class="p">$ </span>cd tests/e2e
+<span class="p">$ </span>npm install
+<span class="p">$ </span>npx playwright install chromium
+<span class="p">$ </span>npm test                      <span class="c"># end-to-end tests</span></code></pre>
+      <p>Every end-to-end test gets:</p>
+      <ul>
+        <li>its own DevTree server on a free port</li>
+        <li>temporary git repositories</li>
+        <li>an isolated git config</li>
+      </ul>
+      <p>The tests then click through the real UI in Chromium, or call the API directly. The network tests run a small password-protected git server (<code>tests/e2e/support/gitserver.py</code>, which needs Python). Avatar services are faked, so nothing depends on the internet.</p>
+      <p>GitHub Actions runs formatting, clippy, the unit tests and the end-to-end tests on <b>Linux, macOS and Windows</b> for every push and pull request.</p>
+
+      <h2 id="style">Code style</h2>
+      <ul>
+        <li><code>cargo fmt</code> (with <code>max_width = 160</code>) and <code>cargo clippy --all-targets -- -D warnings</code> must pass.</li>
+        <li>Shell out to git rather than adding git libraries. Never build commands through a shell, and validate anything that becomes a git argument (see <code>api.rs</code>).</li>
+        <li>No runtime dependencies in the frontend. Keep it plain JavaScript.</li>
+        <li>Comments explain <i>why</i>, not what.</li>
+      </ul>
+
+      <h2 id="pull-requests">Pull requests</h2>
+      <ol>
+        <li>Fork, then create a branch for your change.</li>
+        <li>Add or update an end-to-end test for anything a user can see or do.</li>
+        <li>Run <code>cargo fmt</code>, <code>cargo clippy</code>, <code>cargo test</code> and the end-to-end tests.</li>
+        <li>Open a pull request that explains what changed and why. Screenshots help for UI changes.</li>
+      </ol>
+
+      <h2 id="docs-site">This website</h2>
+      <p>The site in <code>site/</code> is plain HTML and CSS, deployed to Firebase Hosting by GitHub Actions. Pull requests that touch it get a preview link.</p>
+<pre><code><span class="p">$ </span>node scripts/check-site-links.mjs                  <span class="c"># broken links and anchors</span>
+<span class="p">$ </span>npx firebase-tools emulators:start --only hosting  <span class="c"># preview at localhost:5000</span>
+<span class="c"># after UI changes, regenerate the screenshots in site/img:</span>
+<span class="p">$ </span>cd tests/e2e
+<span class="p">$ </span>npx playwright test --config screenshots.config.js</code></pre>
+
+      <nav class="pager" aria-label="Pages">
+        <a href="/docs/security">← Security &amp; privacy</a>
+        <a href="/">Home →</a>
+      </nav>
+    </article>
+  </div>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>

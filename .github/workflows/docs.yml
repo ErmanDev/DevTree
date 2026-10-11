@@ -1,0 +1,70 @@
+name: Docs
+
+# Deploys site/ to Firebase Hosting: the live site on pushes to main, and a preview channel
+# (with a link commented on the PR) for pull requests from this repository.
+# One-time setup: see "Deploying the docs" in README.md.
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "scripts/check-site-links.mjs", "firebase.json", ".firebaserc", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["site/**", "scripts/check-site-links.mjs", "firebase.json", ".firebaserc", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Check links and anchors
+        run: node scripts/check-site-links.mjs
+
+  deploy:
+    needs: check
+    # Forks don't get the deploy secret; their PRs only run the checks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check Firebase is set up
+        id: setup
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "::notice::FIREBASE_SERVICE_ACCOUNT secret not set — skipping deploy (see README: Deploying the docs)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy preview channel
+        if: steps.setup.outputs.ready == 'true' && github.event_name == 'pull_request'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          expires: 7d
+
+      - name: Deploy live site
+        if: steps.setup.outputs.ready == 'true' && github.event_name != 'pull_request'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live

@@ -87,6 +87,31 @@ The end-to-end tests (`tests/e2e/specs`) give every test its own DevTree server 
 
 GitHub Actions (`.github/workflows/ci.yml`) runs formatting, clippy, the unit tests and the end-to-end tests on Linux, macOS and Windows for every push and pull request.
 
+## Documentation site
+
+The docs at `site/` are plain HTML and CSS, with no build step. To preview them locally:
+
+```sh
+npx firebase-tools emulators:start --only hosting --project demo-devtree   # http://localhost:5000
+node scripts/check-site-links.mjs                                          # check every link and #anchor
+```
+
+To regenerate the app screenshots in `site/img/` (needs `cargo build` first):
+
+```sh
+cd tests/e2e && npx playwright test -c screenshots.config.js
+```
+
+### Deploying the docs
+
+`.github/workflows/docs.yml` deploys `site/` to Firebase Hosting. Pushes to `main` go to the live site, and pull requests from this repository get a 7-day preview link. One-time setup:
+
+1. Create a project in the [Firebase console](https://console.firebase.google.com/) and put its ID in `.firebaserc` in place of `devtree-docs`.
+2. Run `npx firebase-tools init hosting:github` from the repository root, or create a Google Cloud service account with the **Firebase Hosting Admin** role and download its JSON key.
+3. Add the JSON key as a repository secret named `FIREBASE_SERVICE_ACCOUNT` (Settings → Secrets and variables → Actions). If `init` offers to overwrite `firebase.json` or the workflow, keep the existing ones.
+
+Until the secret exists, the workflow only checks the links and skips the deploy. To deploy by hand: `npx firebase-tools deploy --only hosting`.
+
 ## How it works
 
 - **Backend** (`src/`): [axum](https://github.com/tokio-rs/axum) runs the real `git` CLI, so pull and push use your existing SSH agent, credential helper and git config. No libgit2, no Electron.

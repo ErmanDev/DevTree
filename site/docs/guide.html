@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User guide · DevTree</title>
+  <meta name="description" content="How to use DevTree: the commit graph, committing and partial staging, branches and remotes, pull and push, merge conflicts, interactive rebase, history, blame, search and compare.">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/getting-started">Get started</a>
+        <a href="/docs/guide" aria-current="page">User guide</a>
+        <a href="/docs/security">Security</a>
+        <a href="/docs/contributing">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page">
+      <h4>USER GUIDE</h4>
+      <a href="#window">The window</a>
+      <a href="#graph">Commit graph</a>
+      <a href="#authors">Author chips</a>
+      <a href="#committing">Committing</a>
+      <a href="#partial-staging">Partial staging</a>
+      <a href="#diffs">Diff viewer</a>
+      <a href="#discard-stash">Discard &amp; stash</a>
+      <a href="#branches">Branches, tags &amp; remotes</a>
+      <a href="#sync">Fetch, pull &amp; push</a>
+      <a href="#conflicts">Merge conflicts</a>
+      <a href="#interactive-rebase">Interactive rebase</a>
+      <a href="#pick-revert-reset">Cherry-pick, revert, reset</a>
+      <a href="#history-blame-search">History, blame &amp; search</a>
+      <a href="#compare">Compare</a>
+      <a href="#shortcuts">Keyboard shortcuts</a>
+    </nav>
+
+    <article class="article">
+      <h1>User guide</h1>
+      <p class="lede">A tour of everything DevTree can do. If you know GitKraken, most of it will feel familiar.</p>
+
+      <h2 id="window">The window</h2>
+      <figure class="shot"><img src="/img/overview.png" width="1440" height="860" alt="The DevTree window: sidebar on the left, graph in the middle, commit details on the right"></figure>
+      <ul>
+        <li><b>Top bar:</b> the repository, the current branch, whether you're ahead (↑) or behind (↓) the remote, and when you last fetched. On the right: <b>Fetch</b>, <b>Pull</b>, <b>Push</b>, <b>Branch</b>, <b>Stash</b>, <b>Pop</b>, refresh, and the light/dark switch.</li>
+        <li><b>Sidebar:</b> your repositories, then the local branches, remotes (grouped by remote), tags and stashes of the open one.</li>
+        <li><b>Graph</b> in the middle, and the <b>details panel</b> on the right for whatever you select.</li>
+        <li><b>Console</b> at the bottom: click it to see every git command DevTree ran and its output.</li>
+      </ul>
+      <p>Nearly everything has a right-click menu: commits, branches, tags, remotes, stashes and files.</p>
+
+      <h2 id="graph">Commit graph</h2>
+      <p>Each branch gets a colored lane. Merges curve in, branches curve out. Nodes show the author's picture or initials. A ring marks your <code>HEAD</code>, and a hollow node marks a merge commit. Badges show branches (filled when checked out), remote branches (dashed) and tags (◆).</p>
+      <ul>
+        <li><b>WIP row:</b> uncommitted changes appear as a dashed node at the top. Click it to open the working tree panel.</li>
+        <li><b>Hover a commit</b> to light up its line of history (its first-parent path).</li>
+        <li><b>Filter:</b> type in the box above the graph (<kbd>/</kbd>) to dim commits that don't match by message, author or SHA. Press <kbd>Enter</kbd> to <a href="#history-blame-search">search all history</a> instead.</li>
+        <li><b>Big repositories:</b> only the rows on screen are drawn, and older history loads as you scroll down. A 30,000-commit repository stays smooth.</li>
+      </ul>
+
+      <h2 id="authors">Author chips</h2>
+      <p>The <b>AUTHOR</b> column and the graph nodes show who wrote each commit. Where pictures come from:</p>
+      <ul>
+        <li>GitHub "noreply" emails (<code>123+name@users.noreply.github.com</code>) use the GitHub avatar.</li>
+        <li>Other emails use Gravatar.</li>
+        <li>If there's no picture, or you're offline, you get colored initials.</li>
+      </ul>
+      <p>A <b>↻</b> after the name means someone else <i>committed</i> it, for example after a rebase, a cherry-pick or a merge on GitHub. Hover it to see who. The details panel shows both the author and the committer.</p>
+      <p>The <b>☺</b> button in the AUTHOR header turns pictures off. DevTree then fetches nothing. See <a href="/docs/security#avatars">privacy</a>.</p>
+      <div class="note"><b>Who pushed?</b><p>Git doesn't record who pushed a commit, only its author and committer, so DevTree can't show it either.</p></div>
+
+      <h2 id="committing">Committing</h2>
+      <p>Click the <b>WIP</b> row. The details panel becomes the working tree:</p>
+      <ul>
+        <li><b>Unstaged</b> and <b>Staged</b> files, each with <b>STAGE</b> / <b>UNSTAGE</b> buttons on hover, plus <b>STAGE ALL</b> / <b>UNSTAGE ALL</b>.</li>
+        <li>Click a file to see its diff.</li>
+        <li>Write a message (the counter turns red past 72 characters on the first line) and press <b>Commit</b>, or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd>.</li>
+        <li>Tick <b>amend last commit</b> to change the previous commit instead.</li>
+      </ul>
+
+      <h2 id="partial-staging">Partial staging</h2>
+      <figure class="shot"><img src="/img/partial-staging.png" width="1440" height="860" loading="lazy" alt="Two selected lines in a diff with Stage 2 lines and Discard 2 buttons"></figure>
+      <p>Open a changed file from the working tree, then:</p>
+      <ul>
+        <li><b>Click lines</b> to select them, and <kbd>Shift</kbd>-click to select a range. Then use <b>Stage N lines</b>, or <b>Discard N</b> to throw just those lines away.</li>
+        <li>Each hunk has <b>STAGE HUNK</b> and <b>DISCARD HUNK</b> buttons.</li>
+        <li>In a <i>staged</i> file's diff, the same works in reverse: <b>Unstage N lines</b> and <b>UNSTAGE HUNK</b>.</li>
+      </ul>
+      <p>Line selection is turned off where a partial patch wouldn't apply cleanly: new, deleted and renamed files (stage the whole file instead), and while "ignore whitespace" is on.</p>
+
+      <h2 id="diffs">Diff viewer</h2>
+      <ul>
+        <li><b>◫ Split / ▤ Unified:</b> side-by-side or inline. The choice is remembered.</li>
+        <li><b>Syntax colors</b> for common languages, and <b>word-level highlights</b> showing exactly what changed within a line.</li>
+        <li><b>␣ Whitespace</b> hides whitespace-only changes.</li>
+        <li><b>Images</b> (PNG, JPEG, GIF, WebP, SVG and more) show a before/after preview with their sizes.</li>
+        <li><b>History</b> and <b>Blame</b> buttons jump to that file's history or blame.</li>
+      </ul>
+
+      <h2 id="discard-stash">Discard &amp; stash</h2>
+      <ul>
+        <li><b>↺</b> next to an unstaged file discards your changes to it (or deletes it, if it's new). <b>Discard all</b> in the working tree panel throws away everything. Both ask first.</li>
+        <li><b>Stash</b> (toolbar or working tree) saves your changes with an optional message, including new files by default. <b>Pop</b> brings back the latest stash.</li>
+        <li>Stashes are listed in the sidebar. Click one to see its changes, with <b>Apply</b>, <b>Pop</b> and <b>Drop</b> buttons.</li>
+        <li>If uncommitted changes would block switching branches, DevTree offers <b>Stash &amp; switch</b>.</li>
+      </ul>
+
+      <h2 id="branches">Branches, tags &amp; remotes</h2>
+      <figure class="shot"><img src="/img/drag-merge.png" width="1060" height="520" loading="lazy" alt="A branch dragged onto main, with a menu offering merge or rebase"></figure>
+      <ul>
+        <li><b>Check out</b> a branch by double-clicking it in the sidebar or on its badge in the graph. A remote branch gets a local tracking branch.</li>
+        <li><b>Drag a branch onto another</b> to merge or rebase. The menu offers what makes sense for those two branches.</li>
+        <li><b>Right-click a branch</b> to:
+          <ul>
+            <li>merge it into your branch, or rebase your branch onto it</li>
+            <li>rename it, or set or unset its upstream</li>
+            <li>compare it with your branch</li>
+            <li>create a branch or tag there</li>
+            <li>delete it. DevTree asks again before force-deleting an unmerged branch, and can delete branches on the remote too.</li>
+          </ul>
+        </li>
+        <li><b>Tags:</b> create lightweight or annotated tags from a commit's menu (optionally pushing them), push one or all tags, and delete them locally or on the remote too.</li>
+        <li><b>Remotes:</b> <b>+</b> next to REMOTE adds one. Click a remote's name to fetch it, prune deleted branches, edit its URL, rename or remove it.</li>
+      </ul>
+
+      <h2 id="sync">Fetch, pull &amp; push</h2>
+      <ul>
+        <li><b>Fetch</b> updates all remotes. Its <b>▾</b> menu sets <b>auto-fetch</b> (off, or every 1, 5, 15 or 30 minutes; 5 by default). The top bar shows when you last fetched.</li>
+        <li><b>Pull</b> uses the mode from its <b>▾</b> menu: fast-forward if possible (default), fast-forward only, or rebase. Local changes are stashed and restored automatically.</li>
+        <li><b>Push</b> pushes your branch. A branch without an upstream is published and tracked automatically.</li>
+        <li>Network commands show a <b>progress card</b> with git's own progress and a <b>Cancel</b> button. Commands on the same repository wait their turn instead of colliding.</li>
+        <li>If a remote needs a password, DevTree <a href="/docs/getting-started#sign-in">asks you to sign in</a> and retries. Background auto-fetches never pop up dialogs. If one needs a sign-in, the top bar says so, and clicking it fetches with the prompt.</li>
+      </ul>
+
+      <h2 id="conflicts">Merge conflicts</h2>
+      <figure class="shot"><img src="/img/conflicts.png" width="1440" height="860" loading="lazy" alt="The conflict editor under a MERGING banner"></figure>
+      <p>When a merge, rebase, cherry-pick or revert stops on conflicts, a striped banner says what's happening (for example <i>MERGING fix/timeouts into main · 1 conflicted file</i>, or <i>REBASING … step 2/5</i>). The banner has:</p>
+      <ul>
+        <li><b>Resolve conflicts</b>: opens the conflict editor. Each conflict is shown side by side: <b>CURRENT</b> (your side) and <b>INCOMING</b>.
+          <ul>
+            <li>Choose <b>Use current</b>, <b>Use incoming</b>, or <b>Both</b> (in either order).</li>
+            <li>Or click <b>Edit manually</b> to write the result yourself.</li>
+            <li><b>Save &amp; mark resolved</b> moves on to the next conflicted file.</li>
+            <li>Binary files, and files deleted on one side, offer <b>Keep current file</b> or <b>Take incoming file</b>.</li>
+          </ul>
+        </li>
+        <li><b>Continue</b> (or <b>Commit merge</b>): enabled once nothing is conflicted.</li>
+        <li><b>Skip</b>: drops the current commit (rebase, cherry-pick and revert only).</li>
+        <li><b>Abort</b>: goes back to where you were before it started.</li>
+      </ul>
+      <div class="warn"><b>"Current" during a rebase</b><p>During a rebase, "current" is the branch you're rebasing <i>onto</i>, and "incoming" is your own commit being replayed. The editor reminds you.</p></div>
+
+      <h2 id="interactive-rebase">Interactive rebase</h2>
+      <figure class="shot"><img src="/img/interactive-rebase.png" width="1440" height="860" loading="lazy" alt="The interactive rebase editor"></figure>
+      <p>Right-click a commit on your branch and choose <b>Interactive rebase from here…</b>. The editor lists the commits after it, oldest at the top, in the order they'll be replayed:</p>
+      <ul>
+        <li>Drag <b>⣿</b> (or use ▲▼) to reorder.</li>
+        <li>Pick an action per commit:
+          <ul>
+            <li><b>pick</b> keeps the commit</li>
+            <li><b>reword</b> keeps it with a new message (starting from the current one)</li>
+            <li><b>squash</b> melds it into the commit above and combines their messages</li>
+            <li><b>fixup</b> melds it in and keeps only the message above</li>
+            <li><b>drop</b> removes it</li>
+          </ul>
+        </li>
+        <li>A summary line shows what will change. DevTree won't start a plan that can't work, such as squashing the first commit. It also warns that merge commits in the range will be flattened.</li>
+      </ul>
+      <p>If the rebase stops for conflicts, resolve them and press <b>Continue</b>. Your reworded messages are still applied.</p>
+
+      <h2 id="pick-revert-reset">Cherry-pick, revert &amp; reset</h2>
+      <p>Right-click any commit:</p>
+      <ul>
+        <li><b>Cherry-pick onto <i>branch</i></b> copies the commit onto your branch.</li>
+        <li><b>Revert this commit…</b> adds a new commit that undoes it. This is safe on shared branches.</li>
+        <li><b>Reset <i>branch</i> to here…</b> moves your branch:
+          <ul>
+            <li><i>soft</i> keeps the changes staged</li>
+            <li><i>mixed</i> keeps them unstaged</li>
+            <li><i>hard</i> throws them away (it asks once more if you have uncommitted work)</li>
+          </ul>
+        </li>
+        <li>Also: check out the commit (detached), merge it or rebase onto it, create a branch or tag there, and copy its SHA or message.</li>
+      </ul>
+
+      <h2 id="history-blame-search">History, blame &amp; search</h2>
+      <figure class="shot"><img src="/img/blame.png" width="1440" height="860" loading="lazy" alt="Blame view colored by age"></figure>
+      <ul>
+        <li><b>File history:</b> right-click any file (or use <b>History</b> in a diff). It lists every commit that changed the file, following renames. Pick one to see its diff, open the commit, or blame the file at that point.</li>
+        <li><b>Blame:</b> each line's author and date, grouped by commit, brighter for more recent changes. Click a line to open its commit.</li>
+        <li><b>Search all history:</b> choose a mode next to the filter box and press <kbd>Enter</kbd>. Modes:
+          <ul>
+            <li><b>message</b></li>
+            <li><b>author</b> (name or email)</li>
+            <li><b>sha</b></li>
+            <li><b>file</b> (file or folder name)</li>
+            <li><b>code</b>: commits that added or removed the text</li>
+          </ul>
+          It searches all branches, not just what's loaded in the graph.</li>
+      </ul>
+      <figure class="shot"><img src="/img/search.png" width="1440" height="860" loading="lazy" alt="Search results for an author across all branches"></figure>
+
+      <h2 id="compare">Compare</h2>
+      <figure class="shot"><img src="/img/compare.png" width="1440" height="860" loading="lazy" alt="Comparing two branches: files that differ and commits unique to each side"></figure>
+      <p>Select a commit, then <kbd>Ctrl</kbd>/<kbd>⌘</kbd>-click a second one, or choose <b>Compare with <i>branch</i></b> from a commit's or branch's menu. The details panel shows:</p>
+      <ul>
+        <li>the files that differ (click one for its diff)</li>
+        <li>the commits only on each side</li>
+        <li>a <b>⇄ SWAP</b> button</li>
+      </ul>
+
+      <h2 id="shortcuts">Keyboard shortcuts</h2>
+      <table>
+        <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>/</kbd></td><td>Focus the filter / search box</td></tr>
+          <tr><td><kbd>Enter</kbd> in the search box</td><td>Search all history with the chosen mode</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd> or <kbd>↓</kbd> <kbd>↑</kbd></td><td>Next / previous commit</td></tr>
+          <tr><td><kbd>r</kbd></td><td>Refresh</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close the open dialog, menu, diff or panel</td></tr>
+          <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd></td><td>Commit (in the commit message box)</td></tr>
+          <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click</td><td>Compare the clicked commit with the selected one</td></tr>
+          <tr><td><kbd>Shift</kbd> + click</td><td>Select a range of lines in a diff</td></tr>
+          <tr><td>Double-click</td><td>Check out a branch (sidebar or badge)</td></tr>
+        </tbody>
+      </table>
+
+      <nav class="pager" aria-label="Pages">
+        <a href="/docs/getting-started">← Getting started</a>
+        <a href="/docs/security">Security &amp; privacy →</a>
+      </nav>
+    </article>
+  </div>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>

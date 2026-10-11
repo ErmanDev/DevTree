@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevTree — a lightweight, local git client</title>
+  <meta name="description" content="DevTree is a GitKraken-style git client in a 2.5 MB Rust binary that runs on localhost: commit graph, conflict editor, partial staging, interactive rebase. No Electron, no account, no telemetry.">
+  <meta property="og:title" content="DevTree — a lightweight, local git client">
+  <meta property="og:description" content="Commit graph, conflict editor, partial staging and interactive rebase in a 2.5 MB Rust binary that runs on localhost.">
+  <meta property="og:image" content="/img/overview.png">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/getting-started">Get started</a>
+        <a href="/docs/guide">User guide</a>
+        <a href="/docs/security">Security</a>
+        <a href="/docs/contributing">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <p class="tag">// open source · Rust · runs on localhost</p>
+      <h1>git, with a <span class="dim">retro</span> soul.</h1>
+      <p class="lede">DevTree is a GitKraken-style git client in a single ~2.5&nbsp;MB Rust binary. Open it in your browser, import a repository, and get a commit graph, a conflict editor, line-by-line staging and interactive rebase. No Electron, no account, no telemetry.</p>
+      <div class="ctas">
+        <a class="btn btn-accent" href="/docs/getting-started">▶ Get started</a>
+        <a class="btn" href="https://github.com/ErmanDev/DevTree">★ View on GitHub</a>
+      </div>
+      <figure class="shot">
+        <div class="bar"><i></i><i></i><i></i><span>localhost:7878 — acme-web</span></div>
+        <img src="/img/overview.png" width="1440" height="860" alt="DevTree showing a commit graph with author pictures, branch and tag badges, and the details of the selected commit">
+      </figure>
+    </section>
+
+    <section class="stats" aria-label="At a glance">
+      <div><b>~2.5 MB</b><span>one binary, the UI is built in</span></div>
+      <div><b>0</b><span>accounts, trackers or Electron</span></div>
+      <div><b>your git</b><span>uses your SSH keys and credential helper</span></div>
+      <div><b>3 OSes</b><span>tested on Linux, macOS and Windows</span></div>
+    </section>
+
+    <section class="install">
+      <div>
+        <h2>Up in a minute</h2>
+        <p>You need <a href="https://www.rust-lang.org/tools/install">Rust</a> and git. Build it, run it, and DevTree opens in your browser at <code>http://localhost:7878</code>.</p>
+        <p><a href="/docs/getting-started">Full install guide →</a></p>
+      </div>
+      <pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
+<span class="p">$ </span>cd DevTree
+<span class="p">$ </span>cargo run --release
+<span class="c">🌳 DevTree running at http://localhost:7878</span></code></pre>
+    </section>
+
+    <section>
+      <h2>Everything you reach for every day</h2>
+      <div class="features">
+        <article class="card">
+          <div class="glyph">⑂</div>
+          <h3>Commit graph</h3>
+          <p>Colored lanes with curved merges, author pictures in the nodes, branch and tag badges. It stays smooth with tens of thousands of commits.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">±</div>
+          <h3>Stage lines, not files</h3>
+          <p>Click the lines you want and stage, unstage or discard just those. A diff viewer with side-by-side view, syntax colors and word-level changes.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">⚠</div>
+          <h3>Conflict editor</h3>
+          <p>Each conflict side by side: keep yours, take theirs, keep both, or edit by hand. Then Continue, Skip or Abort from one banner.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">⣿</div>
+          <h3>Interactive rebase</h3>
+          <p>Drag commits to reorder, then pick, reword, squash, fixup or drop. New messages survive conflict pauses.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">↓↑</div>
+          <h3>Pull &amp; push</h3>
+          <p>Live progress with Cancel, auto-fetch, and a sign-in prompt for HTTPS remotes. Your SSH keys just work.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">⌕</div>
+          <h3>History &amp; blame</h3>
+          <p>File history that follows renames, blame colored by age, search across all history, and compare any two commits or branches.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">⊞</div>
+          <h3>Branches, tags, stash</h3>
+          <p>Drag a branch onto another to merge or rebase. Cherry-pick, revert and reset from the menu. Stash with one click.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">☺</div>
+          <h3>Author chips</h3>
+          <p>See who wrote and who committed each change, with pictures from GitHub or Gravatar. Or initials only, if you prefer.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">◐</div>
+          <h3>Retro, light or dark</h3>
+          <p>Claude-warm colors, pixel headings and faint scanlines, in a dark or a cream light theme.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="showcase">
+      <div class="text">
+        <h2>Merge conflicts, defused</h2>
+        <p>When a merge, rebase or cherry-pick stops, a banner tells you exactly where you are. Open the editor to resolve each conflict:</p>
+        <ul>
+          <li>Use current, incoming, or both, or edit by hand</li>
+          <li>Keep a whole file from one side in one click</li>
+          <li>Continue, skip or abort without the command line</li>
+        </ul>
+        <p><a href="/docs/guide#conflicts">Resolving conflicts →</a></p>
+      </div>
+      <figure class="shot"><img src="/img/conflicts.png" width="1440" height="860" loading="lazy" alt="The conflict editor showing the current and incoming versions side by side under a MERGING banner"></figure>
+    </section>
+
+    <section class="showcase flip">
+      <div class="text">
+        <h2>Commit exactly what you meant</h2>
+        <p>Select individual lines, or whole hunks, and stage them. Unstage or discard a single line just as easily. Word-level highlights show what actually changed within a line.</p>
+        <p><a href="/docs/guide#partial-staging">Partial staging →</a></p>
+      </div>
+      <figure class="shot"><img src="/img/partial-staging.png" width="1440" height="860" loading="lazy" alt="A diff with two selected lines and a Stage 2 lines button"></figure>
+    </section>
+
+    <section class="showcase">
+      <div class="text">
+        <h2>Rewrite history calmly</h2>
+        <p>"Interactive rebase from here…" lists the commits on your branch. Drag them into order, choose an action for each, and check the summary before you start.</p>
+        <p><a href="/docs/guide#interactive-rebase">Interactive rebase →</a></p>
+      </div>
+      <figure class="shot"><img src="/img/interactive-rebase.png" width="1440" height="860" loading="lazy" alt="The interactive rebase editor with pick, reword and fixup actions"></figure>
+    </section>
+
+    <section class="showcase flip">
+      <div class="text">
+        <h2>Know who changed what</h2>
+        <p>Blame shows the author of every line, brighter for newer changes. Click a line to see its commit. File history follows renames.</p>
+        <p><a href="/docs/guide#history-blame-search">History, blame &amp; search →</a></p>
+      </div>
+      <figure class="shot"><img src="/img/blame.png" width="1440" height="860" loading="lazy" alt="Blame view with lines grouped by commit and colored by age"></figure>
+    </section>
+
+    <section class="cta-band">
+      <h2>Open source, made to be hacked on</h2>
+      <p class="lede" style="margin: 0 auto">A few thousand lines of Rust and dependency-free JavaScript, with 40+ end-to-end tests running on every push. Bug reports, ideas and pull requests are welcome.</p>
+      <div class="ctas">
+        <a class="btn btn-accent" href="/docs/contributing">Contribute</a>
+        <a class="btn" href="https://github.com/ErmanDev/DevTree/issues">Report an issue</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>
