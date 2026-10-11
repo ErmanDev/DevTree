@@ -41,6 +41,7 @@ test("discard a file and discard everything", async ({ page, makeRepo, openRepo 
   await expect.poll(() => repo.readIfExists("a.txt")).toBe("a\n");
 
   await page.locator("#btnDiscardAll").click();
+  await expect(page.locator("#dialogTitle")).toHaveText("Discard all changes");
   await page.locator("#dialogOk").click();
   await expect.poll(() => repo.git("status", "--short")).toBe("");
   expect(repo.exists("untracked.txt")).toBe(false);

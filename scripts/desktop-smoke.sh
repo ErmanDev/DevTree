@@ -54,6 +54,8 @@ try() {
 if try default; then
   exit 0
 fi
-# Diagnose: does WebKitGTK draw with compositing off?
+# Diagnose a blank window. WebKit's sandbox (bubblewrap) needs user namespaces, which
+# Ubuntu's AppArmor can restrict for unprivileged programs; report that setting.
+echo "kernel.apparmor_restrict_unprivileged_userns = $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
 try no-compositing WEBKIT_DISABLE_COMPOSITING_MODE=1 || true
 exit 1

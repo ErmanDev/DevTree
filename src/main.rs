@@ -139,7 +139,8 @@ fn main() {
             println!("🌳 DevTree running at {url}  (close the window to quit)");
             runtime.spawn(async { axum::serve(listener, app).await.expect("server error") });
             // The window must own the main thread (macOS requires it); the server runs on the runtime.
-            desktop::run(&url, &cfg.data_dir);
+            // The address itself, not `localhost`: that may resolve to ::1 first, where nothing listens.
+            desktop::run(&format!("http://127.0.0.1:{port}"), &cfg.data_dir);
         }
         open => {
             println!("🌳 DevTree running at {url}  (Ctrl+C to stop)");
