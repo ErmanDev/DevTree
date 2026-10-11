@@ -1,15 +1,16 @@
 // The DevTree promo: a CRT boot intro, four features shown on real screenshots, the key facts,
-// and a call to action. Every scene adapts to the composition's shape (16:9 or square).
-import { AbsoluteFill, Easing, Img, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+// and a call to action, with a voice-over, captions and a retro music bed. Each scene lasts as
+// long as its voice-over line (voiceover/script.json → src/voiceover/lines.ts), and every scene
+// adapts to the composition's shape (16:9 or square).
+import { AbsoluteFill, Audio, Easing, Img, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { C, FONT, REPO, SITE } from "./theme";
+import { MUSIC, VOICE } from "./voiceover/lines";
 
-const BOOT = 105;
-const FEATURE = 120;
-const FACTS = 120;
-const OUTRO = 150;
+const FPS = 30;
 
-const FEATURES: FeatureProps[] = [
+const FEATURES: (FeatureProps & { voice: string })[] = [
   {
+    voice: "graph",
     kicker: "01 · Commit graph",
     title: "See your whole history",
     body: "Colored lanes, curved merges and author pictures. Smooth even with 30,000 commits.",
@@ -17,6 +18,7 @@ const FEATURES: FeatureProps[] = [
     focus: [0.36, 0.42],
   },
   {
+    voice: "staging",
     kicker: "02 · Partial staging",
     title: "Stage exactly the lines you mean",
     body: "Click the lines you want. Stage, unstage or discard just those.",
@@ -24,6 +26,7 @@ const FEATURES: FeatureProps[] = [
     focus: [0.45, 0.28],
   },
   {
+    voice: "conflicts",
     kicker: "03 · Conflict editor",
     title: "Resolve conflicts side by side",
     body: "Keep yours, take theirs, keep both, or edit by hand. Then continue.",
@@ -31,6 +34,7 @@ const FEATURES: FeatureProps[] = [
     focus: [0.45, 0.3],
   },
   {
+    voice: "rebase",
     kicker: "04 · Interactive rebase",
     title: "Rewrite history by drag and drop",
     body: "Reorder, reword, squash, fixup or drop commits in one editor.",
@@ -39,32 +43,104 @@ const FEATURES: FeatureProps[] = [
   },
 ];
 
-export const PROMO_FRAMES = BOOT + FEATURES.length * FEATURE + FACTS + OUTRO;
+/** One scene: what it shows, its voice-over line, when the line starts and how long it holds after. */
+type Scene = { key: string; voice: string; lead: number; tail: number; min: number; render: () => React.ReactNode };
 
-export const Promo: React.FC = () => {
+const SCENES: Scene[] = [
+  // The line starts as the logo lands.
+  { key: "boot", voice: "intro", lead: 36, tail: 18, min: 105, render: () => <Boot /> },
+  ...FEATURES.map(({ voice, ...f }) => ({ key: f.image, voice, lead: 12, tail: 18, min: 120, render: () => <Feature {...f} /> })),
+  { key: "facts", voice: "facts", lead: 10, tail: 15, min: 120, render: () => <Facts /> },
+  // Hold the call to action after the last line.
+  { key: "outro", voice: "outro", lead: 15, tail: 75, min: 150, render: () => <Outro /> },
+];
+
+/** Frame timeline: each scene's start, length, and voice-over interval. */
+const TIMELINE = (() => {
   let at = 0;
-  const next = (len: number) => {
-    const from = at;
-    at += len;
-    return { from, durationInFrames: len };
-  };
-  return (
-    <AbsoluteFill style={{ background: C.bg, color: C.text, fontFamily: FONT.sans }}>
-      <Sequence {...next(BOOT)}>
-        <Boot />
-      </Sequence>
-      {FEATURES.map((f) => (
-        <Sequence key={f.image} {...next(FEATURE)}>
-          <Feature {...f} />
+  return SCENES.map((scene) => {
+    const line = VOICE[scene.voice];
+    const speech = Math.ceil(line.seconds * FPS);
+    const length = Math.max(scene.min, scene.lead + speech + scene.tail);
+    const entry = { scene, line, from: at, length, voFrom: at + scene.lead, voTo: at + scene.lead + speech };
+    at += length;
+    return entry;
+  });
+})();
+
+export const PROMO_FRAMES = TIMELINE.reduce((sum, t) => sum + t.length, 0);
+
+export const Promo: React.FC = () => (
+  <AbsoluteFill style={{ background: C.bg, color: C.text, fontFamily: FONT.sans }}>
+    <Audio src={MUSIC} volume={musicVolume} />
+    {TIMELINE.map((t) => (
+      <Sequence key={t.scene.key} from={t.from} durationInFrames={t.length}>
+        {t.scene.render()}
+        <Sequence from={t.scene.lead} durationInFrames={t.voTo - t.voFrom + 6}>
+          <Audio src={t.line.src} />
         </Sequence>
-      ))}
-      <Sequence {...next(FACTS)}>
-        <Facts />
       </Sequence>
-      <Sequence {...next(OUTRO)}>
-        <Outro />
-      </Sequence>
-      <Crt />
+    ))}
+    <Captions />
+    <Crt />
+  </AbsoluteFill>
+);
+
+/** Music sits under the voice: quieter while someone speaks, and fades out at the end. */
+function musicVolume(frame: number) {
+  const full = 0.32;
+  const ducked = 0.1;
+  const ramp = 8;
+  let level = full;
+  for (const t of TIMELINE) {
+    const inside = Math.min(
+      interpolate(frame, [t.voFrom - ramp, t.voFrom], [0, 1], clamp),
+      interpolate(frame, [t.voTo, t.voTo + ramp * 2], [1, 0], clamp),
+    );
+    level = Math.min(level, full - (full - ducked) * inside);
+  }
+  return level * interpolate(frame, [PROMO_FRAMES - 60, PROMO_FRAMES], [1, 0], clamp) * interpolate(frame, [0, 15], [0, 1], clamp);
+}
+
+/** Captions for the voice-over, a sentence at a time, timed by sentence length. */
+const Captions: React.FC = () => {
+  const frame = useCurrentFrame();
+  const wide = useWide();
+  const t = TIMELINE.find((t) => frame >= t.voFrom && frame < t.voTo + 10);
+  if (!t) return null;
+  const sentences = t.line.text.match(/[^.?!]+[.?!]+/g)?.map((x) => x.trim()) ?? [t.line.text];
+  const total = sentences.reduce((n, x) => n + x.length, 0);
+  const progress = (frame - t.voFrom) / Math.max(1, t.voTo - t.voFrom);
+  let acc = 0;
+  let current = sentences[sentences.length - 1];
+  for (const x of sentences) {
+    acc += x.length / total;
+    if (progress < acc) {
+      current = x;
+      break;
+    }
+  }
+  const fade = Math.min(interpolate(frame, [t.voFrom, t.voFrom + 6], [0, 1], clamp), interpolate(frame, [t.voTo + 4, t.voTo + 10], [1, 0], clamp));
+  return (
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: wide ? 46 : 40, pointerEvents: "none" }}>
+      <div
+        style={{
+          opacity: fade,
+          maxWidth: wide ? 1400 : 960,
+          background: "rgba(8, 17, 20, .86)",
+          borderLeft: `6px solid ${C.teal}`,
+          padding: wide ? "14px 28px" : "14px 24px",
+          fontFamily: FONT.sans,
+          fontWeight: 600,
+          fontSize: wide ? 38 : 36,
+          lineHeight: 1.3,
+          color: C.text,
+          textAlign: "center",
+          boxShadow: `6px 6px 0 ${C.shadow}`,
+        }}
+      >
+        {current}
+      </div>
     </AbsoluteFill>
   );
 };
@@ -250,7 +326,8 @@ const Feature: React.FC<FeatureProps> = ({ kicker, title, body, image, focus }) 
     <AbsoluteFill
       style={{
         opacity: fade,
-        padding: wide ? `0 ${100 * s}px` : 70,
+        // Leave room at the bottom for the captions.
+        padding: wide ? `0 ${100 * s}px 130px` : "60px 70px 170px",
         display: "flex",
         flexDirection: wide ? "row" : "column",
         alignItems: wide ? "center" : "flex-start",

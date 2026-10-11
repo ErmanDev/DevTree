@@ -122,20 +122,32 @@ Until the secret exists, the workflow only checks the links and skips the deploy
 
 ## Promo video
 
-`marketing/` is a [Remotion](https://www.remotion.dev) project that renders DevTree's 30-second promo from code, in 16:9 (`DevTreePromo`, 1920×1080) and square (`DevTreeSquare`, 1080×1080). It uses the docs screenshots in `site/img/`, so re-render after regenerating them and the video shows the current app.
+`marketing/` is a [Remotion](https://www.remotion.dev) project that renders DevTree's promo video from code: a narrated, captioned ~50-second tour with a retro music bed, in 16:9 (`DevTreePromo`, 1920×1080) and square (`DevTreeSquare`, 1080×1080). It uses the docs screenshots in `site/img/`, so re-rendering after regenerating them keeps the video current.
 
 ```sh
 cd marketing
 npm install
 npm run studio    # preview and edit in the browser
-npm run render    # out/devtree-promo.mp4 and out/devtree-promo-square.mp4
+npm run render    # out/devtree-promo.mp4 and out/devtree-promo-square.mp4, sound mastered to -16 LUFS
 npm run still     # out/devtree-promo-poster.png
 ```
+
+**Voice-over.** The narration is in `marketing/voiceover/script.json`: one line per scene, with `text` to speak and an optional `caption` to show. Scenes last as long as their line, so you can rewrite it freely. To regenerate the speech (and the music bed), install the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) text-to-speech model (Apache-2.0, runs offline) and run the generator:
+
+```sh
+cd marketing/voiceover
+python3 -m venv .venv && .venv/bin/pip install kokoro-onnx soundfile numpy
+curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+.venv/bin/python generate.py    # writes src/voiceover/*.mp3 and lines.ts
+```
+
+Change `"voice"` in `script.json` to try another Kokoro voice (for example `am_michael` or `bf_emma`). To use a recorded voice instead, replace the MP3s in `src/voiceover/` and update the `seconds` in `lines.ts`.
 
 The docs home page plays a compressed copy, `site/video/devtree-promo.mp4`:
 
 ```sh
-ffmpeg -i marketing/out/devtree-promo.mp4 -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p -movflags +faststart -an site/video/devtree-promo.mp4
+ffmpeg -i marketing/out/devtree-promo.mp4 -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart site/video/devtree-promo.mp4
 ```
 
 Or run **Actions → Promo video** to render both videos on GitHub and download them as an artifact. Remotion is free for individuals and companies of up to three people; larger companies need a [Remotion company license](https://www.remotion.pro/license).

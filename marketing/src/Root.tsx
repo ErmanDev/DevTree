@@ -6,7 +6,7 @@ import "@fontsource/ibm-plex-sans/600.css";
 import { Composition } from "remotion";
 import { Promo, PROMO_FRAMES } from "./Promo";
 
-export const FPS = 30;
+const FPS = 30;
 
 export const Root: React.FC = () => (
   <>

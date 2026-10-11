@@ -6,3 +6,6 @@ firebase-debug.log
 .firebase/
 marketing/node_modules/
 marketing/out/
+marketing/voiceover/.venv/
+marketing/voiceover/*.onnx
+marketing/voiceover/voices-*.bin

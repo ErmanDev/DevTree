@@ -4,9 +4,9 @@
   "description": "DevTree promo videos, made with Remotion",
   "scripts": {
     "studio": "remotion studio",
-    "render": "remotion render DevTreePromo out/devtree-promo.mp4 && remotion render DevTreeSquare out/devtree-promo-square.mp4",
-    "render:promo": "remotion render DevTreePromo out/devtree-promo.mp4",
-    "render:square": "remotion render DevTreeSquare out/devtree-promo-square.mp4",
+    "render": "node render.mjs",
+    "render:promo": "node render.mjs DevTreePromo",
+    "render:square": "node render.mjs DevTreeSquare",
     "still": "remotion still DevTreePromo out/devtree-promo-poster.png --frame=75",
     "typecheck": "tsc --noEmit"
   },

@@ -1,0 +1,36 @@
+{
+  "voice": "af_heart",
+  "speed": 1.0,
+  "lines": [
+    {
+      "id": "intro",
+      "text": "Meet DevTree. Git, with a retro soul."
+    },
+    {
+      "id": "graph",
+      "text": "See your entire history at a glance. Every branch gets its own color, every merge its own curve, and it stays smooth even with thirty thousand commits.",
+      "caption": "See your entire history at a glance. Every branch gets its own color, every merge its own curve, and it stays smooth even with 30,000 commits."
+    },
+    {
+      "id": "staging",
+      "text": "Commit exactly what you mean. Click the lines you want, stage just those, and leave the rest for later."
+    },
+    {
+      "id": "conflicts",
+      "text": "Merge conflict? Don't panic. Compare both sides, then keep yours, take theirs, or keep both, in one click."
+    },
+    {
+      "id": "rebase",
+      "text": "Tidy up before you push. Reorder, reword, squash or drop commits, just by dragging them into place."
+    },
+    {
+      "id": "facts",
+      "text": "And it's tiny. About three megabytes, with no Electron, no account and no tracking. It runs on Windows, Mac and Linux, and it's open source.",
+      "caption": "And it's tiny. About 3 MB, with no Electron, no account and no tracking. It runs on Windows, macOS and Linux, and it's open source."
+    },
+    {
+      "id": "outro",
+      "text": "DevTree. Free and open source. Download it today."
+    }
+  ]
+}
