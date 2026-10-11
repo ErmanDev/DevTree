@@ -210,10 +210,9 @@ pub struct RefLabel {
 
 pub async fn log(dir: &Path, limit: usize) -> Result<Vec<Commit>, String> {
     let max = format!("--max-count={limit}");
-    let format = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1e";
     let out = run(
         dir,
-        &["log", "--exclude=refs/stash", "--all", "--topo-order", "--decorate=full", &max, format],
+        &["log", "--exclude=refs/stash", "--all", "--topo-order", "--decorate=full", &max, LOG_FORMAT],
         LOCAL_TIMEOUT,
     )
     .await?;
@@ -225,6 +224,126 @@ pub async fn log(dir: &Path, limit: usize) -> Result<Vec<Commit>, String> {
         return Err(error_text(&out));
     }
     Ok(parse_log(&out.stdout))
+}
+
+const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1e";
+
+/// `git log` with extra arguments (filters, ranges), parsed into commits.
+pub async fn log_query(dir: &Path, args: &[&str], timeout: Duration) -> Result<Vec<Commit>, String> {
+    let mut all = vec!["log", "--decorate=full", LOG_FORMAT];
+    all.extend(args);
+    let out = run(dir, &all, timeout).await?;
+    if !out.ok {
+        return Err(error_text(&out));
+    }
+    Ok(parse_log(&out.stdout))
+}
+
+/// A commit that touched a file, and the file's path in that commit (it may have been renamed).
+#[derive(Debug, Serialize)]
+pub struct FileCommit {
+    #[serde(flatten)]
+    pub commit: Commit,
+    pub path: String,
+}
+
+pub async fn file_history(dir: &Path, path: &str, limit: usize) -> Result<Vec<FileCommit>, String> {
+    let max = format!("--max-count={limit}");
+    let text = run_ok(dir, &["log", "--follow", "-M", "--name-only", "--decorate=full", &max, "--format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1f", "--", path]).await?;
+    Ok(text
+        .split(RECORD)
+        .filter(|r| !r.trim().is_empty())
+        .filter_map(|r| {
+            // Fields end with a separator; the file name follows on its own line.
+            let (fields, files) = r.rsplit_once(FIELD)?;
+            let commit = parse_log(&format!("{fields}{RECORD}")).pop()?;
+            let path = files.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or(path).to_string();
+            Some(FileCommit { commit, path })
+        })
+        .collect())
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlameLine {
+    pub sha: String,
+    pub line: u32,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Default, Clone)]
+pub struct BlameCommit {
+    pub author: String,
+    pub time: i64,
+    pub summary: String,
+    /// The file's path in that commit (differs after renames).
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Blame {
+    pub lines: Vec<BlameLine>,
+    pub commits: std::collections::HashMap<String, BlameCommit>,
+}
+
+/// Line-by-line authorship. `rev` = None blames the working-tree file.
+pub async fn blame(dir: &Path, path: &str, rev: Option<&str>) -> Result<Blame, String> {
+    let mut args = vec!["blame", "--porcelain", "-M"];
+    args.extend(rev);
+    args.extend(["--", path]);
+    Ok(parse_blame(&run_ok(dir, &args).await?))
+}
+
+fn parse_blame(text: &str) -> Blame {
+    let mut blame = Blame { lines: Vec::new(), commits: Default::default() };
+    let mut current: Option<(String, u32)> = None;
+    for line in text.lines() {
+        if let Some(content) = line.strip_prefix('\t') {
+            if let Some((sha, n)) = current.take() {
+                blame.lines.push(BlameLine { sha, line: n, text: content.to_string() });
+            }
+            continue;
+        }
+        let mut parts = line.splitn(2, ' ');
+        let key = parts.next().unwrap_or("");
+        let value = parts.next().unwrap_or("");
+        if key.len() == 40 && key.bytes().all(|b| b.is_ascii_hexdigit()) {
+            let n = value.split(' ').nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+            blame.commits.entry(key.to_string()).or_default();
+            current = Some((key.to_string(), n));
+            continue;
+        }
+        let Some((sha, _)) = &current else { continue };
+        let c = blame.commits.entry(sha.clone()).or_default();
+        match key {
+            "author" => c.author = value.to_string(),
+            "author-time" => c.time = value.parse().unwrap_or(0),
+            "summary" => c.summary = value.to_string(),
+            "filename" => c.path = value.to_string(),
+            _ => {}
+        }
+    }
+    blame
+}
+
+/// Files changed between two commits.
+pub async fn compare_files(dir: &Path, from: &str, to: &str) -> Result<Vec<ChangedFile>, String> {
+    Ok(parse_name_status(&run_ok(dir, &["diff", "--name-status", "-z", "-M", from, to, "--"]).await?))
+}
+
+pub async fn compare_diff(dir: &Path, from: &str, to: &str, path: &str, orig: Option<&str>, ignore_ws: bool) -> Result<String, String> {
+    let mut args = vec!["diff", "-M", from, to];
+    if ignore_ws {
+        args.push("-w");
+    }
+    args.extend(["--", path]);
+    args.extend(orig);
+    Ok(truncate_diff(run_ok(dir, &args).await?))
+}
+
+/// Full commit id for a branch, tag or commit name.
+pub async fn resolve(dir: &Path, name: &str) -> Result<String, String> {
+    let out = run(dir, &["rev-parse", "--verify", "--quiet", "--end-of-options", &format!("{name}^{{commit}}")], LOCAL_TIMEOUT).await?;
+    if out.ok { Ok(out.stdout.trim().to_string()) } else { Err(format!("unknown revision {name}")) }
 }
 
 fn parse_log(text: &str) -> Vec<Commit> {
@@ -689,6 +808,18 @@ mod tests {
         assert_eq!(st.files[1].path, "new name.rs");
         assert_eq!(st.files[1].orig_path.as_deref(), Some("old.rs"));
         assert!(st.files[2].untracked);
+    }
+
+    #[test]
+    fn parses_blame_porcelain() {
+        let sha = "a".repeat(40);
+        let text = format!("{sha} 1 1 2\nauthor Ada\nauthor-time 100\nsummary First\nfilename a.rs\n\tfn main() {{\n{sha} 2 2\n\t}}\n");
+        let b = parse_blame(&text);
+        assert_eq!(b.lines.len(), 2);
+        assert_eq!(b.lines[1].text, "}");
+        assert_eq!(b.lines[1].line, 2);
+        let c = &b.commits[&sha];
+        assert_eq!((c.author.as_str(), c.time, c.summary.as_str(), c.path.as_str()), ("Ada", 100, "First", "a.rs"));
     }
 
     #[test]

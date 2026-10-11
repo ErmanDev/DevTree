@@ -33,6 +33,8 @@ const state = {
   pullMode: "merge",
   conflict: null,      // conflict editor state
   diff: null,          // open diff viewer state
+  fileView: null,      // open history / blame / search panel
+  compare: null,       // { from, to, fromSha, toSha } while comparing
   diffSplit: false,    // side-by-side diffs
   ignoreWs: false,     // hide whitespace-only changes
   netBusy: 0,          // network commands in flight
@@ -668,7 +670,7 @@ function renderGraph() {
       })
       .join("");
     const match = !filter || r.subject.toLowerCase().includes(filter) || r.author.toLowerCase().includes(filter) || r.sha.startsWith(filter);
-    html.push(`<div class="row${state.selected === r.sha ? " selected" : ""}${match ? "" : " dim"}" data-sha="${r.sha}">
+    html.push(`<div class="row${isSelectedRow(r.sha) ? " selected" : ""}${match ? "" : " dim"}" data-sha="${r.sha}">
       <div class="col-graph"></div>
       <div class="col-msg">${refs}<span class="subject" title="${esc(r.subject)}">${esc(r.subject)}</span></div>
       <div class="col-author" title="${esc(r.author)} <${esc(r.email)}>">${esc(r.author)}</div>
@@ -714,13 +716,22 @@ function renderGraph() {
   svg.innerHTML = `<g fill="none" stroke-width="2" stroke-linecap="round">${paths.join("")}</g><g>${nodes.join("")}</g>`;
 }
 
+/** Rows highlighted as selected: the selected commit, or both ends of a comparison. */
+function isSelectedRow(sha) {
+  if (state.selected === "COMPARE" && state.compare) return sha === state.compare.fromSha || sha === state.compare.toSha;
+  return state.selected === sha;
+}
+
 function markSelected() {
   for (const el of document.querySelectorAll(".row.selected")) el.classList.remove("selected");
-  const el = document.querySelector(`.row[data-sha="${state.selected}"]`);
-  if (el) {
-    el.classList.add("selected");
-    el.scrollIntoView({ block: "nearest" });
+  let first = null;
+  for (const el of document.querySelectorAll(".row[data-sha]")) {
+    if (isSelectedRow(el.dataset.sha)) {
+      el.classList.add("selected");
+      first = first || el;
+    }
   }
+  if (first && state.selected !== "COMPARE") first.scrollIntoView({ block: "nearest" });
 }
 
 // ---------------------------------------------------------------- commit detail
@@ -728,6 +739,7 @@ function markSelected() {
 async function selectCommit(sha) {
   if (!sha || !state.repo) return;
   state.selected = sha;
+  state.compare = null;
   markSelected();
   const panel = $("detail");
   try {
@@ -771,6 +783,7 @@ function fileItem(st, path, orig, attrs, action = "") {
 
 function selectWip() {
   state.selected = "WIP";
+  state.compare = null;
   markSelected();
   renderWip();
 }
@@ -1043,6 +1056,7 @@ function refMenuItems(name, kind, sha) {
     items.push({ label: `Merge ${name} into ${headLabel()}`, fn: () => mergeInto(name) });
     if (kind !== "tag") items.push({ label: `Rebase ${headLabel()} onto ${name}`, fn: () => rebaseOnto(name) });
   }
+  if (!isCurrent && state.status?.head) items.push({ label: `Compare with ${headLabel()}`, fn: () => { closeDiff(); openCompare(currentBranch() || state.status.head, name); } });
   items.push("-", { label: "Create branch here…", fn: () => newBranch(sha) });
   if (kind !== "tag") items.push({ label: "Create tag here…", fn: () => newTag(sha) });
   if (kind === "local") {
@@ -1076,6 +1090,7 @@ function commitMenuItems(sha) {
     items.push({ label: `Rebase ${headLabel()} onto this commit`, fn: () => rebaseOnto(sha) });
     items.push({ label: `Cherry-pick onto ${headLabel()}`, fn: () => cherryPick(sha) });
   }
+  if (!isHead && state.status?.head) items.push({ label: `Compare with ${headLabel()}`, fn: () => { closeDiff(); openCompare(sha, currentBranch() || state.status.head); } });
   items.push(
     { label: "Revert this commit…", fn: () => revertCommit(sha) },
     { label: `Reset ${headLabel()} to here…`, fn: () => resetTo(sha), danger: true },
@@ -1270,6 +1285,7 @@ function wireDragAndDrop() {
  */
 async function openDiff(spec) {
   state.conflict = null;
+  state.fileView = null;
   state.diff = { ...spec, raw: "", parsed: null, selected: new Set(), anchor: null, images: [] };
   $("diffView").hidden = false;
   await loadDiff();
@@ -1334,6 +1350,8 @@ function renderDiffView() {
     }
     toolbar.push(d.staged ? `<button class="btn" data-dv="unstage-file">Unstage file</button>` : `<button class="btn" data-dv="stage-file">Stage file</button>`);
   }
+  toolbar.unshift(`<button class="btn" data-panel="history" title="Commits that changed this file">History</button>`,
+    `<button class="btn" data-panel="blame" title="Who changed each line">Blame</button>`);
   $("diffActions").innerHTML = toolbar.join("");
   const hunkButtons = selectable
     ? (hi) => (d.staged
@@ -1431,6 +1449,7 @@ function closeDiff() {
   state.conflict = null;
   if (state.diff) for (const u of state.diff.images || []) URL.revokeObjectURL(u);
   state.diff = null;
+  state.fileView = null;
   $("diffView").hidden = true;
   $("diffActions").innerHTML = "";
   for (const el of document.querySelectorAll(".files li.active")) el.classList.remove("active");
@@ -1605,6 +1624,173 @@ function afterResolved() {
   }
 }
 
+// ---------------------------------------------------------------- file history, blame, search, compare
+
+/** Shows a custom view (history, blame, search results) in the diff overlay. */
+function openPanel(title, html, actions = "") {
+  state.conflict = null;
+  state.diff = null;
+  $("diffView").hidden = false;
+  $("diffTitle").textContent = title;
+  $("diffActions").innerHTML = actions;
+  $("diffBody").innerHTML = html;
+  $("diffBody").scrollTop = 0;
+}
+
+function fileMenuItems(path, { sha = null, orig = null } = {}) {
+  return [
+    { label: "File history", fn: () => openFileHistory(path) },
+    { label: sha ? `Blame at ${short(sha)}` : "Blame", fn: () => openBlame(path, sha) },
+    "-",
+    { label: "Copy path", fn: () => copy(path) },
+    ...(orig ? [{ label: "Copy old path", fn: () => copy(orig) }] : []),
+  ];
+}
+
+async function openFileHistory(path) {
+  openPanel(`history · ${path}`, `<div class="nodiff">loading…</div>`);
+  const view = { kind: "history", path, commits: [], index: 0 };
+  state.fileView = view;
+  try {
+    view.commits = await repoApi("GET", `/file-history?path=${encodeURIComponent(path)}`);
+  } catch (e) {
+    $("diffBody").innerHTML = `<div class="nodiff">${esc(e.message)}</div>`;
+    return;
+  }
+  if (state.fileView !== view) return;
+  const list = view.commits.map((c, i) => `<li data-hist="${i}" class="${i === 0 ? "active" : ""}" title="${esc(c.subject)}">
+      <div class="h-sub">${esc(c.subject)}</div>
+      <div class="h-meta"><span class="copy">${short(c.sha)}</span> · ${esc(c.author)} · ${esc(relTime(c.time))}${c.path !== path ? ` · <i>${esc(c.path)}</i>` : ""}</div></li>`).join("");
+  $("diffBody").innerHTML = `<div class="hist">
+      <ul class="hist-list">${list || `<li class="empty-note">no commits touch this file</li>`}</ul>
+      <div class="hist-diff" id="histDiff"></div></div>`;
+  if (view.commits.length) showHistoryEntry(0);
+}
+
+async function showHistoryEntry(i) {
+  const view = state.fileView;
+  if (!view || view.kind !== "history") return;
+  view.index = i;
+  for (const li of document.querySelectorAll(".hist-list li")) li.classList.toggle("active", +li.dataset.hist === i);
+  const c = view.commits[i];
+  const older = view.commits[i + 1];
+  const orig = older && older.path !== c.path ? older.path : null;
+  const pane = $("histDiff");
+  pane.innerHTML = `<div class="hist-head"><span>${short(c.sha)} · ${esc(c.subject)}</span>
+    <span><button class="mini" data-hist-act="show">SHOW COMMIT</button> <button class="mini" data-hist-act="blame">BLAME HERE</button></span></div><div class="nodiff">loading…</div>`;
+  const q = new URLSearchParams({ path: c.path, ignore_ws: state.ignoreWs });
+  if (orig) q.set("orig", orig);
+  try {
+    const { diff } = await repoApi("GET", `/commit/${c.sha}/diff?${q}`);
+    if (state.fileView !== view || view.index !== i) return;
+    pane.lastElementChild.outerHTML = `<div class="diff-code">${Diff.render(Diff.parse(diff), { path: c.path, split: state.diffSplit })}</div>`;
+  } catch (e) {
+    pane.lastElementChild.textContent = e.message;
+  }
+}
+
+async function openBlame(path, rev = null) {
+  openPanel(`blame · ${path}${rev ? ` @ ${short(rev)}` : ""}`, `<div class="nodiff">loading…</div>`,
+    `<button class="btn" data-panel="history" title="Commits that changed this file">History</button>`);
+  const view = { kind: "blame", path, rev };
+  state.fileView = view;
+  let b;
+  try {
+    const q = new URLSearchParams({ path });
+    if (rev) q.set("rev", rev);
+    b = await repoApi("GET", `/blame?${q}`);
+  } catch (e) {
+    $("diffBody").innerHTML = `<div class="nodiff">${esc(e.message)}</div>`;
+    return;
+  }
+  if (state.fileView !== view) return;
+  // Colour each line by the age of its commit: newest = bright accent, oldest = faint.
+  const times = [...new Set(Object.values(b.commits).map((c) => c.time))].sort((x, y) => x - y);
+  const heat = (t) => (times.length > 1 ? times.indexOf(t) / (times.length - 1) : 1);
+  const lang = Diff.langFor(path);
+  let prev = null;
+  const rows = b.lines.map((l) => {
+    const c = b.commits[l.sha] || {};
+    const uncommitted = /^0+$/.test(l.sha);
+    const first = l.sha !== prev;
+    prev = l.sha;
+    const gutter = first
+      ? `<span class="bl-sha">${uncommitted ? "·······" : short(l.sha)}</span> <span class="bl-who">${esc(uncommitted ? "not committed yet" : c.author)}</span><span class="bl-when">${uncommitted ? "" : esc(relTime(c.time))}</span>`
+      : "";
+    const h = uncommitted ? 1 : heat(c.time);
+    return `<div class="bl-row${first ? " bl-first" : ""}" ${uncommitted ? "" : `data-blame="${l.sha}"`} title="${esc(uncommitted ? "uncommitted" : `${short(l.sha)} ${c.summary}\n${c.author}, ${fullTime(c.time)}`)}">
+      <span class="bl-gutter" style="--heat:${(0.15 + 0.85 * h).toFixed(2)}">${gutter}</span><span class="bl-no">${l.line}</span><span class="bl-code">${Diff.highlight(l.text, lang)}</span></div>`;
+  });
+  const commits = Object.keys(b.commits).filter((k) => !/^0+$/.test(k)).length;
+  $("diffBody").innerHTML = `<div class="cx-bar"><span><b>${b.lines.length}</b> lines from <b>${commits}</b> commit${commits === 1 ? "" : "s"} · brighter = more recent · click a line to see its commit</span></div><div class="blame">${rows.join("")}</div>`;
+}
+
+const SEARCH_HINTS = {
+  message: "search commit messages…",
+  author: "search authors (name or email)…",
+  sha: "find a commit id…",
+  file: "find commits touching a file or folder…",
+  code: "find commits that added/removed text…",
+};
+
+async function runSearch() {
+  const q = $("search").value.trim();
+  const mode = $("searchMode").value;
+  if (!q || !state.repo) return;
+  openPanel(`search · ${mode}: ${q}`, `<div class="nodiff">searching all history…</div>`);
+  const view = { kind: "search", q, mode };
+  state.fileView = view;
+  let res;
+  try {
+    res = await repoApi("GET", `/search?${new URLSearchParams({ q, mode })}`);
+  } catch (e) {
+    $("diffBody").innerHTML = `<div class="nodiff">${esc(e.message)}</div>`;
+    return;
+  }
+  if (state.fileView !== view) return;
+  view.commits = res.commits;
+  const loaded = new Set(state.rows.map((r) => r.sha));
+  const items = res.commits.map((c) => `<li data-goto="${c.sha}" class="${loaded.has(c.sha) ? "" : "unloaded"}" title="${loaded.has(c.sha) ? "" : "older than the commits loaded in the graph"}">
+      <span class="col-sha">${short(c.sha)}</span>
+      <span class="s-sub">${c.refs.map((r) => `<span class="ref ${r.kind}" style="--c:var(--accent)">${esc(r.name)}</span>`).join("")} ${esc(c.subject)}</span>
+      <span class="s-meta">${esc(c.author)} · ${esc(relTime(c.time))}</span></li>`).join("");
+  $("diffBody").innerHTML = `<div class="cx-bar"><span><b>${res.commits.length}</b>${res.limited ? "+" : ""} commit${res.commits.length === 1 ? "" : "s"} found in all branches${res.limited ? " (showing the newest)" : ""}</span></div>
+    <ul class="search-list">${items || `<li class="empty-note">nothing found</li>`}</ul>`;
+}
+
+/** Compares two commits or branches in the detail panel. */
+async function openCompare(from, to) {
+  state.selected = "COMPARE";
+  state.compare = { from, to, fromSha: null, toSha: null };
+  const cmp = state.compare;
+  $("detail").innerHTML = `<div class="detail-empty">comparing…</div>`;
+  let d;
+  try {
+    d = await repoApi("GET", `/compare?${new URLSearchParams({ from, to })}`);
+  } catch (e) {
+    fail(e, "compare");
+    return;
+  }
+  if (state.compare !== cmp) return;
+  cmp.fromSha = d.from;
+  cmp.toSha = d.to;
+  markSelected();
+  const label = (name, sha) => (name === sha ? nameFor(sha) : name);
+  const A = label(from, d.from), B = label(to, d.to);
+  const commitList = (list) => list.slice(0, 30).map((c) => `<li data-goto="${c.sha}" title="${esc(c.subject)}"><span class="meta">${short(c.sha)}</span> ${esc(c.subject)}</li>`).join("") +
+    (list.length > 30 ? `<li class="empty-note">…and ${list.length - 30} more</li>` : "");
+  $("detail").innerHTML = `<div class="detail-pad">
+    <h2>compare</h2>
+    <div class="cmp-ends"><span class="ref branch" style="--c:#6fa3c7">${esc(A)}</span> → <span class="ref branch" style="--c:var(--accent-2)">${esc(B)}</span>
+      <button class="mini" data-cmp="swap" title="Swap sides">⇄ SWAP</button></div>
+    <p class="cmp-sum">${d.only_to.length} commit${d.only_to.length === 1 ? "" : "s"} only in <b>${esc(B)}</b> · ${d.only_from.length} only in <b>${esc(A)}</b></p>
+    <h3><span>${d.files.length} FILE${d.files.length === 1 ? "" : "S"} DIFFER</span></h3>
+    <ul class="files">${d.files.map((f) => fileItem(f.status, f.path, f.orig_path, `data-xdiff="${esc(f.path)}" data-orig="${esc(f.orig_path || "")}"`)).join("") || `<li class="empty-note">identical trees</li>`}</ul>
+    ${d.only_to.length ? `<h3><span>ONLY IN ${esc(B).toUpperCase()}</span></h3><ul class="list cmp-commits">${commitList(d.only_to)}</ul>` : ""}
+    ${d.only_from.length ? `<h3><span>ONLY IN ${esc(A).toUpperCase()}</span></h3><ul class="list cmp-commits">${commitList(d.only_from)}</ul>` : ""}
+  </div>`;
+}
+
 // ---------------------------------------------------------------- import modal
 
 function openModal() {
@@ -1775,8 +1961,14 @@ function wire() {
   $("rows").onclick = (e) => {
     const row = e.target.closest(".row[data-sha]");
     if (!row) return;
+    const sha = row.dataset.sha;
+    // Ctrl/Cmd-click a second commit to compare it with the selected one.
+    if ((e.ctrlKey || e.metaKey) && sha !== "WIP") {
+      const base = state.selected === "COMPARE" ? state.compare?.fromSha : state.selected;
+      if (base && base !== "WIP" && base !== sha) { closeDiff(); openCompare(base, sha); return; }
+    }
     closeDiff();
-    if (row.dataset.sha === "WIP") selectWip(); else selectCommit(row.dataset.sha);
+    if (sha === "WIP") selectWip(); else selectCommit(sha);
   };
   $("rows").ondblclick = (e) => {
     const ref = e.target.closest(".ref.branch, .ref.remote");
@@ -1796,6 +1988,14 @@ function wire() {
   };
   $("loadMore").onclick = (e) => { state.limit += PAGE; run(e.currentTarget, "load more commits", async () => {}); };
   $("search").oninput = (e) => { state.filter = e.target.value.trim(); renderGraph(); };
+  $("search").onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+    if (e.key === "Escape") { e.target.value = ""; state.filter = ""; renderGraph(); e.target.blur(); }
+  };
+  $("searchMode").onchange = (e) => {
+    $("search").placeholder = `${SEARCH_HINTS[e.target.value]}  (Enter)`;
+    $("search").focus();
+  };
 
   // Detail panel (delegated: content is re-rendered often)
   $("detail").onclick = (e) => {
@@ -1805,6 +2005,15 @@ function wire() {
     if (cp) { copy(cp.dataset.copy); return; }
     const sa = e.target.closest("[data-stash-act]");
     if (sa) { stashAction(+sa.dataset.n, sa.dataset.stashAct, sa); return; }
+    if (e.target.closest('[data-cmp="swap"]') && state.compare) return void openCompare(state.compare.to, state.compare.from);
+    const x = e.target.closest("li[data-xdiff]");
+    if (x && state.compare) {
+      const c = state.compare;
+      openDiff({ kind: "compare", path: x.dataset.xdiff, orig: x.dataset.orig || null, from: c.fromSha, to: c.toSha, fromSha: c.fromSha, toSha: c.toSha });
+      for (const el of document.querySelectorAll(".files li.active")) el.classList.remove("active");
+      x.classList.add("active");
+      return;
+    }
     const conflict = e.target.closest("li[data-conflict]");
     if (conflict) {
       openConflict(conflict.dataset.conflict);
@@ -1828,6 +2037,44 @@ function wire() {
     li.classList.add("active");
   };
   $("btnCloseDiff").onclick = closeDiff;
+  $("detail").addEventListener("contextmenu", (e) => {
+    const li = e.target.closest("li[data-cdiff], li[data-wdiff], li[data-xdiff], li[data-conflict]");
+    if (!li) return;
+    e.preventDefault();
+    const path = li.dataset.cdiff || li.dataset.wdiff || li.dataset.xdiff || li.dataset.conflict;
+    const sha = li.dataset.cdiff ? state.selected : li.dataset.xdiff && state.compare ? state.compare.toSha : null;
+    showMenu(e.clientX, e.clientY, fileMenuItems(path, { sha, orig: li.dataset.orig || null }));
+  });
+  // History / blame / search panels
+  const panelClick = (e) => {
+    const p = e.target.closest("[data-panel]");
+    if (p) {
+      const path = state.diff?.path || state.fileView?.path;
+      const rev = state.diff?.kind === "commit" ? state.diff.sha : state.diff?.kind === "compare" ? state.diff.toSha : null;
+      if (path) p.dataset.panel === "history" ? openFileHistory(path) : openBlame(path, rev);
+      return true;
+    }
+    return false;
+  };
+  $("diffActions").addEventListener("click", panelClick);
+  $("diffBody").addEventListener("click", (e) => {
+    if (panelClick(e)) return;
+    const h = e.target.closest("li[data-hist]");
+    if (h) return void showHistoryEntry(+h.dataset.hist);
+    const act = e.target.closest("[data-hist-act]");
+    if (act && state.fileView?.kind === "history") {
+      const c = state.fileView.commits[state.fileView.index];
+      return void (act.dataset.histAct === "show" ? selectCommit(c.sha) : openBlame(c.path, c.sha));
+    }
+    const bl = e.target.closest("[data-blame]");
+    if (bl) return void selectCommit(bl.dataset.blame);
+    const g = e.target.closest("li[data-goto]");
+    if (g) {
+      selectCommit(g.dataset.goto);
+      for (const li of document.querySelectorAll(".search-list li.active")) li.classList.remove("active");
+      g.classList.add("active");
+    }
+  });
   $("diffBody").addEventListener("click", (e) => {
     const dv = e.target.closest("[data-dv]");
     if (dv) return void diffAction(dv.dataset.dv, dv);

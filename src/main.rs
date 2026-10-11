@@ -1,5 +1,6 @@
 mod actions;
 mod api;
+mod explore;
 mod git;
 mod graph;
 mod net;
@@ -119,6 +120,11 @@ async fn serve(cfg: Config) {
         .route("/repos/{id}/tag", post(actions::create_tag))
         .route("/repos/{id}/tag/delete", post(actions::delete_tag))
         .route("/repos/{id}/tag/push", post(actions::push_tag))
+        .route("/repos/{id}/file-history", get(explore::file_history))
+        .route("/repos/{id}/blame", get(explore::blame))
+        .route("/repos/{id}/search", get(explore::search))
+        .route("/repos/{id}/compare", get(explore::compare))
+        .route("/repos/{id}/compare/diff", get(explore::compare_diff))
         .route("/repos/{id}/blob", get(actions::blob))
         .route("/repos/{id}/apply", post(actions::apply_patch))
         .route("/repos/{id}/cherry-pick", post(actions::cherry_pick))
