@@ -9,7 +9,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::Notify;
 
@@ -71,6 +71,8 @@ pub struct Extra {
     /// `-c key=value` settings placed before the subcommand.
     pub config: Vec<String>,
     pub env: Vec<(&'static str, String)>,
+    /// Data written to git's standard input (e.g. a patch for `git apply -`).
+    pub stdin: Option<Vec<u8>>,
 }
 
 pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extra) -> Result<GitOutput, String> {
@@ -87,13 +89,20 @@ pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extr
         .env("GIT_EDITOR", "true")
         .env("LC_ALL", "C")
         .envs(extra.env.iter().map(|(k, v)| (*k, v.as_str())))
-        .stdin(Stdio::null())
+        .stdin(if extra.stdin.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
     let command = format!("git {}", args.join(" "));
     let mut child = cmd.spawn().map_err(|e| format!("failed to start git: {e}"))?;
+
+    if let (Some(data), Some(mut pipe)) = (extra.stdin.clone(), child.stdin.take()) {
+        tokio::spawn(async move {
+            let _ = pipe.write_all(&data).await;
+            // Dropping the pipe closes it, so git sees end-of-input.
+        });
+    }
 
     // Read both pipes concurrently; stderr is scanned live for progress lines.
     let mut stdout = child.stdout.take().expect("piped stdout");
@@ -607,19 +616,21 @@ pub fn truncate_diff(mut s: String) -> String {
     s
 }
 
-/// Diff of one file inside a commit, against its first parent.
-pub async fn commit_file_diff(dir: &Path, sha: &str, path: &str) -> Result<String, String> {
+/// Diff of one file inside a commit, against its first parent. `orig` is the old path of a rename.
+pub async fn commit_file_diff(dir: &Path, sha: &str, path: &str, orig: Option<&str>, ignore_ws: bool) -> Result<String, String> {
     let parent = run(dir, &["rev-parse", "--verify", "--quiet", &format!("{sha}^1")], LOCAL_TIMEOUT).await?;
-    let text = if parent.ok {
-        run_ok(dir, &["diff", "-M", parent.stdout.trim(), sha, "--", path]).await?
-    } else {
-        run_ok(dir, &["show", "--format=", sha, "--", path]).await?
-    };
-    Ok(truncate_diff(text))
+    let mut args = if parent.ok { vec!["diff", "-M", parent.stdout.trim(), sha] } else { vec!["show", "--format=", "-M", sha] };
+    if ignore_ws {
+        args.push("-w");
+    }
+    args.extend(["--", path]);
+    args.extend(orig);
+    Ok(truncate_diff(run_ok(dir, &args).await?))
 }
 
 /// Diff of one working-tree file: staged (index vs HEAD) or unstaged (worktree vs index).
-pub async fn worktree_diff(dir: &Path, path: &str, staged: bool, untracked: bool) -> Result<String, String> {
+pub async fn worktree_diff(dir: &Path, path: &str, staged: bool, untracked: bool, ignore_ws: bool) -> Result<String, String> {
+    let ws: &[&str] = if ignore_ws { &["-w"] } else { &[] };
     let text = if untracked {
         // `--no-index` exits 1 when files differ, which is the expected case here.
         let out = run(dir, &["diff", "--no-index", "--", "/dev/null", path], LOCAL_TIMEOUT).await?;
@@ -627,12 +638,29 @@ pub async fn worktree_diff(dir: &Path, path: &str, staged: bool, untracked: bool
             return Err(error_text(&out));
         }
         out.stdout
-    } else if staged {
-        run_ok(dir, &["diff", "--cached", "-M", "--", path]).await?
     } else {
-        run_ok(dir, &["diff", "--", path]).await?
+        let mut args = vec!["diff"];
+        if staged {
+            args.extend(["--cached", "-M"]);
+        }
+        args.extend(ws);
+        args.extend(["--", path]);
+        run_ok(dir, &args).await?
     };
     Ok(truncate_diff(text))
+}
+
+/// Raw bytes of a file at a revision spec such as `HEAD:src/a.png` or `:src/a.png` (index).
+pub async fn blob(dir: &Path, spec: &str) -> Result<Option<Vec<u8>>, String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["cat-file", "blob", spec])
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(LOCAL_TIMEOUT, out).await.map_err(|_| "git cat-file timed out".to_string())?.map_err(|e| e.to_string())?;
+    Ok(out.status.success().then_some(out.stdout))
 }
 
 #[cfg(test)]

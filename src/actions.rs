@@ -351,6 +351,88 @@ pub async fn push_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): 
     }
 }
 
+// ---------------------------------------------------------------- blobs & partial staging
+
+/// Largest file served for previews.
+const MAX_BLOB_BYTES: usize = 20 * 1024 * 1024;
+
+#[derive(Deserialize)]
+pub struct BlobQuery {
+    path: String,
+    /// "worktree", "index", "HEAD", a commit id, or a commit id followed by `^` (its first parent).
+    rev: String,
+}
+
+/// Raw file contents at a revision, for image previews. Served with a sandboxing CSP so an
+/// SVG can never run script in DevTree's origin.
+pub async fn blob(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<BlobQuery>) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+    let r = repo(&s, &id).await?;
+    let path = valid_path(&q.path)?;
+    let bytes = match q.rev.as_str() {
+        "worktree" => std::fs::read(r.path.join(path)).ok(),
+        "index" => git::blob(&r.path, &format!(":{path}")).await?,
+        rev => {
+            let base = rev.strip_suffix('^');
+            let commit = if rev == "HEAD" { rev } else { valid_sha(base.unwrap_or(rev))? };
+            let spec = if base.is_some() { format!("{commit}^1:{path}") } else { format!("{commit}:{path}") };
+            git::blob(&r.path, &spec).await?
+        }
+    };
+    let bytes = bytes.ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "no such file at that revision"))?;
+    if bytes.len() > MAX_BLOB_BYTES {
+        return Err(bad("file too large to preview"));
+    }
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let ty = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        "svg" => "image/svg+xml",
+        _ => "application/octet-stream",
+    };
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, ty),
+            (axum::http::header::CONTENT_SECURITY_POLICY, "sandbox; default-src 'none'; style-src 'unsafe-inline'"),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct ApplyBody {
+    patch: String,
+    /// Apply in reverse (unstage / discard).
+    #[serde(default)]
+    reverse: bool,
+    /// "index" (stage / unstage) or "worktree" (discard).
+    target: String,
+}
+
+/// Applies a patch built in the UI from selected hunks or lines.
+pub async fn apply_patch(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<ApplyBody>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    let mut args = vec!["apply", "--recount", "--whitespace=nowarn"];
+    match b.target.as_str() {
+        "index" => args.push("--cached"),
+        "worktree" => {}
+        other => return Err(bad(format!("unknown apply target {other}"))),
+    }
+    if b.reverse {
+        args.push("--reverse");
+    }
+    args.push("-");
+    let extra = git::Extra { stdin: Some(b.patch.into_bytes()), ..Default::default() };
+    net_result(git::run_with(&r.path, &args, LOCAL_TIMEOUT, &extra).await?)
+}
+
 // ---------------------------------------------------------------- cherry-pick, revert, reset
 
 #[derive(Deserialize)]

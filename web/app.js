@@ -32,6 +32,9 @@ const state = {
   amend: false,
   pullMode: "merge",
   conflict: null,      // conflict editor state
+  diff: null,          // open diff viewer state
+  diffSplit: false,    // side-by-side diffs
+  ignoreWs: false,     // hide whitespace-only changes
   netBusy: 0,          // network commands in flight
   autoFetch: 5,        // minutes between background fetches; 0 = off
   lastAutoFetch: {},   // repo id -> unix time of the last auto-fetch attempt
@@ -750,7 +753,7 @@ async function selectCommit(sha) {
         <dt>parents</dt><dd>${parents || "<i>root commit</i>"}</dd>
       </dl>
       <h3><span>${c.files.length} FILE${c.files.length === 1 ? "" : "S"} CHANGED</span>${c.parents.length > 1 ? `<span class="count">vs first parent</span>` : ""}</h3>
-      <ul class="files">${c.files.map((f) => fileItem(f.status, f.path, f.orig_path, `data-cdiff="${esc(f.path)}"`)).join("")}</ul>
+      <ul class="files">${c.files.map((f) => fileItem(f.status, f.path, f.orig_path, `data-cdiff="${esc(f.path)}" data-orig="${esc(f.orig_path || "")}"`)).join("")}</ul>
     </div>`;
   } catch (e) {
     fail(e, "load commit");
@@ -1261,48 +1264,173 @@ function wireDragAndDrop() {
 
 // ---------------------------------------------------------------- diffs
 
-async function showDiff(title, path) {
+/**
+ * Opens the diff viewer. spec: { kind: "commit" | "worktree" | "compare", path, orig?, sha?,
+ * staged?, untracked?, from?, to? }
+ */
+async function openDiff(spec) {
   state.conflict = null;
+  state.diff = { ...spec, raw: "", parsed: null, selected: new Set(), anchor: null, images: [] };
   $("diffView").hidden = false;
-  $("diffTitle").textContent = title;
-  $("diffActions").innerHTML = "";
+  await loadDiff();
+}
+
+function diffUrl(d) {
+  const q = new URLSearchParams({ path: d.path, ignore_ws: state.ignoreWs });
+  if (d.orig) q.set("orig", d.orig);
+  if (d.kind === "commit") return `/commit/${d.sha}/diff?${q}`;
+  if (d.kind === "compare") { q.set("from", d.from); q.set("to", d.to); return `/compare/diff?${q}`; }
+  q.set("staged", !!d.staged);
+  q.set("untracked", !!d.untracked);
+  return `/diff?${q}`;
+}
+
+function diffTitle(d) {
+  if (d.kind === "commit") return `${d.path}  ·  ${short(d.sha)}`;
+  if (d.kind === "compare") return `${d.path}  ·  ${nameFor(d.from)} → ${nameFor(d.to)}`;
+  return `${d.path}  ·  ${d.untracked ? "new file" : d.staged ? "staged" : "unstaged"}`;
+}
+
+async function loadDiff() {
+  const d = state.diff;
+  if (!d) return;
+  $("diffTitle").textContent = diffTitle(d);
+  if (Diff.isImage(d.path)) return renderImageDiff(d);
   $("diffBody").innerHTML = `<div class="nodiff">loading…</div>`;
   try {
-    const { diff } = await repoApi("GET", path);
-    $("diffBody").innerHTML = renderDiff(diff);
+    const { diff } = await repoApi("GET", diffUrl(d));
+    if (state.diff !== d) return;
+    d.raw = diff;
+    d.parsed = Diff.parse(diff);
+    d.selected = new Set();
+    renderDiffView();
   } catch (e) {
+    $("diffActions").innerHTML = "";
     $("diffBody").innerHTML = `<div class="nodiff">${esc(e.message)}</div>`;
   }
 }
 
-function renderDiff(text) {
-  if (!text.trim()) return `<div class="nodiff">No textual changes.</div>`;
-  if (/^Binary files .* differ$/m.test(text) && !text.includes("@@")) return `<div class="nodiff">Binary file changed.</div>`;
-  const out = [];
-  let a = 0, b = 0, inHunk = false;
-  for (const line of text.replace(/\n$/, "").split("\n")) {
-    const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/);
-    if (m) {
-      a = +m[1]; b = +m[2]; inHunk = true;
-      out.push(`<div class="hunk">${esc(line)}</div>`);
-    } else if (!inHunk || line.startsWith("diff --git")) {
-      inHunk = false;
-      if (line && !/^(index |--- |\+\+\+ |diff --git)/.test(line)) out.push(`<div class="meta">${esc(line)}</div>`);
-    } else if (line.startsWith("+")) {
-      out.push(`<div class="ln add"><span class="n"></span><span class="n">${b++}</span><span class="t">${esc(line)}</span></div>`);
-    } else if (line.startsWith("-")) {
-      out.push(`<div class="ln del"><span class="n">${a++}</span><span class="n"></span><span class="t">${esc(line)}</span></div>`);
-    } else if (line.startsWith("\\")) {
-      out.push(`<div class="meta">${esc(line)}</div>`);
-    } else {
-      out.push(`<div class="ln"><span class="n">${a++}</span><span class="n">${b++}</span><span class="t">${esc(line)}</span></div>`);
+/** Whether lines of this diff can be staged / unstaged / discarded individually. */
+function canSelectLines(d) {
+  const p = d.parsed;
+  return d.kind === "worktree" && !d.untracked && !state.ignoreWs && p && p.hunks.length &&
+    !p.truncated && !p.binary && !p.newFile && !p.deletedFile && !p.renamed;
+}
+
+function renderDiffView() {
+  const d = state.diff;
+  if (!d || !d.parsed) return;
+  const selectable = canSelectLines(d);
+  const n = d.selected.size;
+  const toolbar = [
+    `<button class="btn" data-dv="split" title="Toggle side-by-side view">${state.diffSplit ? "▤ Unified" : "◫ Split"}</button>`,
+    `<button class="btn${state.ignoreWs ? " on" : ""}" data-dv="ws" title="Ignore whitespace changes">␣ Whitespace ${state.ignoreWs ? "hidden" : "shown"}</button>`,
+  ];
+  if (d.kind === "worktree") {
+    if (selectable && n) {
+      if (d.staged) toolbar.push(`<button class="btn btn-accent" data-dv="unstage-sel">Unstage ${n} line${n === 1 ? "" : "s"}</button>`);
+      else toolbar.push(`<button class="btn btn-accent" data-dv="stage-sel">Stage ${n} line${n === 1 ? "" : "s"}</button>`,
+        `<button class="btn btn-danger" data-dv="discard-sel">Discard ${n}</button>`);
     }
+    toolbar.push(d.staged ? `<button class="btn" data-dv="unstage-file">Unstage file</button>` : `<button class="btn" data-dv="stage-file">Stage file</button>`);
   }
-  return out.join("");
+  $("diffActions").innerHTML = toolbar.join("");
+  const hunkButtons = selectable
+    ? (hi) => (d.staged
+      ? `<span class="hunk-btns"><button class="mini" data-dv="unstage-hunk" data-h="${hi}">UNSTAGE HUNK</button></span>`
+      : `<span class="hunk-btns"><button class="mini" data-dv="stage-hunk" data-h="${hi}">STAGE HUNK</button><button class="mini danger" data-dv="discard-hunk" data-h="${hi}">DISCARD HUNK</button></span>`)
+    : null;
+  const hint = selectable && !n ? `<div class="cx-hint">Click lines to select them (shift-click for a range), then stage${d.staged ? " / unstage" : " or discard"} just those.</div>` : "";
+  const body = Diff.render(d.parsed, { path: d.path, split: state.diffSplit, selectable, selected: d.selected, hunkButtons });
+  const scroll = $("diffBody").scrollTop;
+  $("diffBody").innerHTML = hint + `<div class="diff-code${state.diffSplit ? " is-split" : ""}">${body}</div>`;
+  $("diffBody").scrollTop = scroll;
+}
+
+/** Stage, unstage or discard the given "hunk:line" keys of the open worktree diff. */
+async function applyLines(keys, action, btn) {
+  const d = state.diff;
+  const reverse = action !== "stage";
+  const patch = Diff.buildPatch(d.parsed, new Set(keys), reverse);
+  if (!patch) return;
+  if (action === "discard" && !(await confirmBox("Discard lines", `Throw away ${keys.length} changed line${keys.length === 1 ? "" : "s"} in ${d.path}?\n\nThis cannot be undone.`, "Discard", true))) return;
+  const res = await run(btn, `${action} ${keys.length} line${keys.length === 1 ? "" : "s"} of ${d.path}`,
+    () => repoApi("POST", "/apply", { patch, reverse, target: action === "discard" ? "worktree" : "index" }));
+  if (res && state.diff === d) await loadDiff();
+}
+
+async function diffAction(action, el) {
+  const d = state.diff;
+  if (!d) return;
+  if (action === "split") {
+    state.diffSplit = !state.diffSplit;
+    try { localStorage.setItem("devtree.diffSplit", state.diffSplit ? "1" : ""); } catch {}
+    return renderDiffView();
+  }
+  if (action === "ws") { state.ignoreWs = !state.ignoreWs; return loadDiff(); }
+  if (action === "stage-sel") return applyLines([...d.selected], "stage", el);
+  if (action === "unstage-sel") return applyLines([...d.selected], "unstage", el);
+  if (action === "discard-sel") return applyLines([...d.selected], "discard", el);
+  const hunkKeys = () => Diff.changedKeys(d.parsed, +el.dataset.h);
+  if (action === "stage-hunk") return applyLines(hunkKeys(), "stage", el);
+  if (action === "unstage-hunk") return applyLines(hunkKeys(), "unstage", el);
+  if (action === "discard-hunk") return applyLines(hunkKeys(), "discard", el);
+  if (action === "stage-file" || action === "unstage-file") {
+    const stage = action === "stage-file";
+    const res = await run(el, `${stage ? "stage" : "unstage"} ${d.path}`, () => repoApi("POST", stage ? "/stage" : "/unstage", { paths: [d.path] }));
+    if (res) closeDiff();
+  }
+}
+
+/** Click / shift-click line selection in the diff. */
+function toggleLine(el, shift) {
+  const d = state.diff;
+  const key = el.dataset.sel;
+  const [h, l] = key.split(":").map(Number);
+  if (shift && d.anchor && d.anchor[0] === h) {
+    const [lo, hi] = [Math.min(d.anchor[1], l), Math.max(d.anchor[1], l)];
+    for (const k of Diff.changedKeys(d.parsed, h)) {
+      const li = +k.split(":")[1];
+      if (li >= lo && li <= hi) d.selected.add(k);
+    }
+  } else if (d.selected.has(key)) {
+    d.selected.delete(key);
+  } else {
+    d.selected.add(key);
+  }
+  d.anchor = [h, l];
+  renderDiffView();
+}
+
+/** Before/after preview for image files. */
+async function renderImageDiff(d) {
+  $("diffActions").innerHTML = "";
+  $("diffBody").innerHTML = `<div class="nodiff">loading images…</div>`;
+  let revs;
+  if (d.kind === "commit") revs = [[`${d.sha}^`, d.orig || d.path], [d.sha, d.path]];
+  else if (d.kind === "compare") revs = [[d.fromSha, d.orig || d.path], [d.toSha, d.path]];
+  else if (d.untracked) revs = [null, ["worktree", d.path]];
+  else if (d.staged) revs = [["HEAD", d.orig || d.path], ["index", d.path]];
+  else revs = [["index", d.path], ["worktree", d.path]];
+  const load = async (r) => {
+    if (!r || !r[0]) return null;
+    const res = await fetch(`/api/repos/${state.repo.id}/blob?${new URLSearchParams({ rev: r[0], path: r[1] })}`, { headers: { "X-DevTree": "1" } });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), size: blob.size };
+  };
+  const [before, after] = await Promise.all(revs.map(load));
+  if (state.diff !== d) return;
+  d.images = [before, after].filter(Boolean).map((i) => i.url);
+  const pane = (img, label) => `<div class="img-pane"><div class="cx-label">${label}${img ? ` · ${(img.size / 1024).toFixed(1)} KB` : ""}</div>
+    ${img ? `<div class="img-box"><img src="${img.url}" alt="${label}" onload="this.parentNode.nextElementSibling.textContent=this.naturalWidth+' × '+this.naturalHeight"></div><div class="img-dim"></div>` : `<div class="nodiff">${label === "BEFORE" ? "(new file)" : "(deleted)"}</div>`}</div>`;
+  $("diffBody").innerHTML = `<div class="img-compare">${pane(before, "BEFORE")}${pane(after, "AFTER")}</div>`;
 }
 
 function closeDiff() {
   state.conflict = null;
+  if (state.diff) for (const u of state.diff.images || []) URL.revokeObjectURL(u);
+  state.diff = null;
   $("diffView").hidden = true;
   $("diffActions").innerHTML = "";
   for (const el of document.querySelectorAll(".files li.active")) el.classList.remove("active");
@@ -1360,6 +1488,7 @@ function assembleConflicts(segs) {
 }
 
 async function openConflict(path) {
+  state.diff = null;
   $("diffView").hidden = false;
   $("diffTitle").textContent = `resolve · ${path}`;
   $("diffActions").innerHTML = "";
@@ -1691,17 +1820,24 @@ function wire() {
       if (e.target.closest(".do-stage")) return void run(e.target, `stage ${path}`, () => repoApi("POST", "/stage", { paths: [path] }));
       if (e.target.closest(".do-unstage")) return void run(e.target, `unstage ${path}`, () => repoApi("POST", "/unstage", { paths: [path] }));
       if (e.target.closest(".do-discard")) return void discardFile(path, untracked, e.target);
-      const staged = li.dataset.staged === "true";
-      const q = `path=${encodeURIComponent(path)}&staged=${staged}&untracked=${untracked}`;
-      showDiff(`${path}  ·  ${staged ? "staged" : "unstaged"}`, `/diff?${q}`);
+      openDiff({ kind: "worktree", path, staged: li.dataset.staged === "true", untracked });
     } else {
-      const path = li.dataset.cdiff;
-      showDiff(`${path}  ·  ${short(state.selected)}`, `/commit/${state.selected}/diff?path=${encodeURIComponent(path)}`);
+      openDiff({ kind: "commit", path: li.dataset.cdiff, orig: li.dataset.orig || null, sha: state.selected });
     }
     for (const el of document.querySelectorAll(".files li.active")) el.classList.remove("active");
     li.classList.add("active");
   };
   $("btnCloseDiff").onclick = closeDiff;
+  $("diffBody").addEventListener("click", (e) => {
+    const dv = e.target.closest("[data-dv]");
+    if (dv) return void diffAction(dv.dataset.dv, dv);
+    const line = e.target.closest("[data-sel]");
+    if (line && state.diff && !window.getSelection().toString()) toggleLine(line, e.shiftKey);
+  });
+  $("diffActions").addEventListener("click", (e) => {
+    const dv = e.target.closest("[data-dv]");
+    if (dv) diffAction(dv.dataset.dv, dv);
+  });
   const cxClick = (e) => {
     const b = e.target.closest("[data-cx]");
     if (b && !b.disabled) conflictAction(b.dataset.cx, b.dataset.i === undefined ? -1 : +b.dataset.i, b);
@@ -1771,6 +1907,7 @@ function wire() {
     const theme = localStorage.getItem("devtree.theme");
     if (theme) document.documentElement.dataset.theme = theme;
     state.pullMode = localStorage.getItem("devtree.pullMode") || "merge";
+    state.diffSplit = !!localStorage.getItem("devtree.diffSplit");
     const auto = localStorage.getItem("devtree.autoFetch");
     if (auto !== null && AUTO_FETCH_CHOICES.includes(+auto)) state.autoFetch = +auto;
   } catch {}

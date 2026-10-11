@@ -24,6 +24,7 @@ use store::Store;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
+const DIFF_JS: &str = include_str!("../web/diff.js");
 const STYLE_CSS: &str = include_str!("../web/style.css");
 
 
@@ -118,6 +119,8 @@ async fn serve(cfg: Config) {
         .route("/repos/{id}/tag", post(actions::create_tag))
         .route("/repos/{id}/tag/delete", post(actions::delete_tag))
         .route("/repos/{id}/tag/push", post(actions::push_tag))
+        .route("/repos/{id}/blob", get(actions::blob))
+        .route("/repos/{id}/apply", post(actions::apply_patch))
         .route("/repos/{id}/cherry-pick", post(actions::cherry_pick))
         .route("/repos/{id}/revert", post(actions::revert))
         .route("/repos/{id}/reset", post(actions::reset))
@@ -133,6 +136,7 @@ async fn serve(cfg: Config) {
     let app = Router::new()
         .route("/", get(|| async { asset(INDEX_HTML, "text/html; charset=utf-8") }))
         .route("/app.js", get(|| async { asset(APP_JS, "text/javascript; charset=utf-8") }))
+        .route("/diff.js", get(|| async { asset(DIFF_JS, "text/javascript; charset=utf-8") }))
         .route("/style.css", get(|| async { asset(STYLE_CSS, "text/css; charset=utf-8") }))
         .nest("/api", api)
         .layer(middleware::from_fn(require_local_host))
@@ -340,20 +344,25 @@ async fn commit_detail(State(s): Shared, UrlPath((id, sha)): UrlPath<(String, St
 #[derive(Deserialize)]
 struct DiffQuery {
     path: String,
+    /// Old path of a renamed file (commit diffs).
+    orig: Option<String>,
     #[serde(default)]
     staged: bool,
     #[serde(default)]
     untracked: bool,
+    /// Ignore whitespace changes (`-w`).
+    #[serde(default)]
+    ignore_ws: bool,
 }
 
 async fn commit_diff(State(s): Shared, UrlPath((id, sha)): UrlPath<(String, String)>, Query(q): Query<DiffQuery>) -> ApiResult {
     let r = repo(&s, &id).await?;
-    ok(json!({ "diff": git::commit_file_diff(&r.path, valid_sha(&sha)?, &q.path).await? }))
+    ok(json!({ "diff": git::commit_file_diff(&r.path, valid_sha(&sha)?, &q.path, q.orig.as_deref(), q.ignore_ws).await? }))
 }
 
 async fn worktree_diff(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<DiffQuery>) -> ApiResult {
     let r = repo(&s, &id).await?;
-    ok(json!({ "diff": git::worktree_diff(&r.path, &q.path, q.staged, q.untracked).await? }))
+    ok(json!({ "diff": git::worktree_diff(&r.path, &q.path, q.staged, q.untracked, q.ignore_ws).await? }))
 }
 
 // ---------------------------------------------------------------- remote operations
