@@ -93,6 +93,9 @@ pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extr
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // Own process group, so cancelling can stop git's helpers too (see kill_tree).
+    #[cfg(unix)]
+    cmd.process_group(0);
 
     let command = format!("git {}", args.join(" "));
     let mut child = cmd.spawn().map_err(|e| format!("failed to start git: {e}"))?;
@@ -142,11 +145,11 @@ pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extr
     let status = tokio::select! {
         s = child.wait() => s.map_err(|e| format!("git failed: {e}"))?,
         _ = cancelled => {
-            let _ = child.kill().await;
+            kill_tree(&mut child).await;
             return Err(CANCELLED.to_string());
         }
         _ = tokio::time::sleep(timeout) => {
-            let _ = child.kill().await;
+            kill_tree(&mut child).await;
             return Err(format!("`{command}` timed out after {}s", timeout.as_secs()));
         }
     };
@@ -177,6 +180,25 @@ pub fn self_command(mode: &str) -> Option<String> {
 
 /// Holds new commit messages for "reword" steps of an interactive rebase (see `rebase.rs`).
 pub const REWORD_FILE: &str = "devtree-reword.json";
+
+/// Kills git and everything it started. Network commands run helpers such as
+/// `git-remote-https`; killing only git would leave them transferring (and, on Windows,
+/// holding files open) until the server answers.
+async fn kill_tree(child: &mut tokio::process::Child) {
+    if let Some(pid) = child.id() {
+        #[cfg(unix)]
+        let killer = Command::new("kill").args(["-KILL", &format!("-{pid}")]).status();
+        #[cfg(windows)]
+        let killer = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        #[cfg(any(unix, windows))]
+        let _ = killer.await;
+    }
+    let _ = child.kill().await;
+}
 
 /// Error text for a command the user cancelled.
 pub const CANCELLED: &str = "cancelled by user";

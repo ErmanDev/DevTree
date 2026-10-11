@@ -130,7 +130,8 @@ const test = base.test.extend({
   tmp: async ({}, use) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devtree-e2e-"));
     await use(dir);
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // Windows keeps files locked briefly after processes exit, so retry for a few seconds.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   },
 
   env: async ({ tmp }, use) => {

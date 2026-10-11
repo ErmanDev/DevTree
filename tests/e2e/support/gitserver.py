@@ -19,8 +19,10 @@ GOOD = "Basic " + base64.b64encode(b"alice:s3cret").decode()
 def app(env, start):
     slow = os.path.join(ROOT, "SLOW")
     if os.path.exists(slow):
+        # Read and close before sleeping: Windows can't delete a file that is open.
         with open(slow) as f:
-            time.sleep(float(f.read().strip() or 5))
+            delay = float(f.read().strip() or 5)
+        time.sleep(delay)
     if env.get("HTTP_AUTHORIZATION") != GOOD:
         start("401 Unauthorized", [("WWW-Authenticate", 'Basic realm="test"'), ("Content-Type", "text/plain")])
         return [b"auth required\n"]
