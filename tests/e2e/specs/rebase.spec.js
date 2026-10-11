@@ -35,7 +35,11 @@ test("reorder, reword, squash and drop from the editor", async ({ page, makeRepo
 
   await page.locator("#rbStart").click();
   await expect(page.locator("#rebaseModal")).toBeHidden();
-  await expect.poll(() => repo.log("%s")).toEqual(["Commit two, reworded", "commit 4", "commit 0"]);
+  // Wait for the whole rebase: with a fixup after the reword, git may already show the new
+  // message while the fixup step is still running.
+  await expect
+    .poll(() => ({ running: repo.exists(".git/rebase-merge"), log: repo.log("%s") }), { timeout: 15000 })
+    .toEqual({ running: false, log: ["Commit two, reworded", "commit 4", "commit 0"] });
   expect(repo.git("log", "-1", "--format=%b").trim()).toBe("with a body");
   expect(repo.exists("f1.txt")).toBe(false); // dropped
   expect(repo.exists("f3.txt")).toBe(true); // fixup'd into commit 2

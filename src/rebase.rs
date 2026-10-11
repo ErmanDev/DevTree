@@ -33,6 +33,26 @@ pub fn write_todo(file: Option<&str>) -> std::io::Result<()> {
 
 /// `devtree edit-message <file>`: the commit-message "editor". Leaves the message as git
 /// proposed it, except during a reword step of a DevTree rebase.
+/// The commit whose message git is asking for, if that step is a `reword`.
+///
+/// git moves the step it is executing to the end of `done` before calling the editor. When
+/// fixups or squashes follow a reword, newer git versions ask for the message once, after the
+/// last of them, so walk back over them to the step that starts the chain.
+fn reworded_commit(done: &str) -> Option<&str> {
+    let steps = done.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#'));
+    for step in steps.rev() {
+        let mut parts = step.split_whitespace();
+        let action = parts.next()?;
+        match action {
+            // `fixup -C <sha>` / `fixup -c <sha>` carry a flag before the commit.
+            "fixup" | "f" | "squash" | "s" => continue,
+            "reword" | "r" => return parts.find(|p| !p.starts_with('-')),
+            _ => return None,
+        }
+    }
+    None
+}
+
 pub fn edit_message(file: Option<&str>) -> std::io::Result<()> {
     let Some(file) = file else { return Ok(()) };
     let Ok(out) = std::process::Command::new("git").args(["rev-parse", "--absolute-git-dir"]).output() else {
@@ -43,21 +63,11 @@ pub fn edit_message(file: Option<&str>) -> std::io::Result<()> {
         return Ok(());
     };
     let map: HashMap<String, String> = serde_json::from_str(&map).unwrap_or_default();
-    // git moves the step it is executing to the end of `done` before calling the editor.
     let done = std::fs::read_to_string(git_dir.join("rebase-merge/done")).unwrap_or_default();
-    let Some(step) = done.lines().rev().find(|l| !l.trim().is_empty() && !l.starts_with('#')) else {
+    let Some(sha) = reworded_commit(&done) else {
         return Ok(());
     };
-    let mut parts = step.split_whitespace();
-    let (Some(action), Some(sha)) = (parts.next(), parts.next()) else {
-        return Ok(());
-    };
-    let reword = matches!(action, "reword" | "r");
-    if let Some(msg) = map
-        .iter()
-        .find(|(k, _)| reword && (k.starts_with(sha) || sha.starts_with(k.as_str())))
-        .map(|(_, m)| m)
-    {
+    if let Some(msg) = map.iter().find(|(k, _)| k.starts_with(sha) || sha.starts_with(k.as_str())).map(|(_, m)| m) {
         std::fs::write(file, format!("{}\n", msg.trim_end()))?;
     }
     Ok(())
@@ -173,4 +183,22 @@ pub async fn start(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json
         let _ = std::fs::remove_file(&reword_file);
     }
     net_result(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reworded_commit;
+
+    #[test]
+    fn finds_the_reword_a_message_is_asked_for() {
+        assert_eq!(reworded_commit("pick aaa one\nreword bbb two\n"), Some("bbb"));
+        // Asked once at the end of a fixup/squash chain (newer git).
+        assert_eq!(reworded_commit("reword bbb two\nfixup ccc three\n"), Some("bbb"));
+        assert_eq!(reworded_commit("r bbb two\nfixup -C ccc three\ns ddd four\n"), Some("bbb"));
+        assert_eq!(reworded_commit("# comment\nreword bbb two\n\n"), Some("bbb"));
+        // Not a reword: leave git's message alone.
+        assert_eq!(reworded_commit("reword bbb two\npick ccc three\n"), None);
+        assert_eq!(reworded_commit("pick aaa one\nsquash ccc three\n"), None);
+        assert_eq!(reworded_commit(""), None);
+    }
 }

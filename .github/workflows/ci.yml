@@ -46,6 +46,8 @@ jobs:
         run: cargo build
       - name: Desktop window smoke test
         if: runner.os == 'Linux'
+        env:
+          SMOKE_SHOTS: tests/e2e/test-results/desktop-smoke
         run: scripts/desktop-smoke.sh
 
       - uses: actions/setup-node@v5
