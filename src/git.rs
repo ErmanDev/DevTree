@@ -103,6 +103,9 @@ pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extr
     cmd.args(args)
         // Never block on an interactive username/password prompt: there is no TTY.
         .env("GIT_TERMINAL_PROMPT", "0")
+        // Read-only commands (status runs on every refresh) must not take .git/index.lock just to
+        // refresh stat data: a commit, reset or discard running at the same moment would fail.
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_ASKPASS", "")
         // `--continue` steps would otherwise open an editor for the commit message.
         .env("GIT_EDITOR", self_command("edit-message").unwrap_or_else(|| "true".into()))
@@ -915,6 +918,7 @@ pub async fn worktree_diff(dir: &Path, path: &str, staged: bool, untracked: bool
 /// Raw bytes of a file at a revision spec such as `HEAD:src/a.png` or `:src/a.png` (index).
 pub async fn blob(dir: &Path, spec: &str) -> Result<Option<Vec<u8>>, String> {
     let out = hide_console(&mut Command::new("git"))
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .arg("-C")
         .arg(dir)
         .args(["cat-file", "blob", spec])

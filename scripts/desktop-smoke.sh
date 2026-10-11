@@ -46,6 +46,12 @@ try() {
   done
   echo "✗ [$name] window found: $found, colors on screen: $colors"
   cat "$TMP/$name.log"
+  # Diagnostics: is the window mapped, are WebKit's helper processes alive, did the page connect?
+  win=$(xwininfo -root -tree | grep '"DevTree"' | awk '{print $1}' | head -1)
+  [ -n "$win" ] && xwininfo -id "$win" | grep -E 'Width|Height|Map State' || true
+  ps -eo pid,ppid,stat,etime,args | grep -iE '[W]ebKit|[d]evtree' || true
+  port=$(grep -o 'localhost:[0-9]*' "$TMP/$name.log" | head -1 | cut -d: -f2)
+  [ -n "$port" ] && { echo "connections to :$port"; ss -tn state established "( dport = :$port )" || true; }
   kill "$APP"
   APP=
   return 1
