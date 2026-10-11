@@ -426,6 +426,8 @@ async function openRepo(id) {
   closeDiff();
   $("detail").innerHTML = `<div class="detail-empty">Loading…</div>`;
   state.autoFetchProblem = null;
+  state.hoverSha = state.hoverPath = state.hoverPathList = null;
+  $("graphScroll").scrollTop = 0;
   await reload();
   setTimeout(autoFetchTick, 1500);
   // Start with the working tree when there are changes, otherwise the HEAD commit.
@@ -457,6 +459,9 @@ function renderEmpty() {
   $("opBanner").hidden = true;
   $("fetchInfo").hidden = true;
   document.documentElement.style.setProperty("--banner-h", "0px");
+  state.graph = null;
+  $("graphBody").style.height = "";
+  $("rows").style.paddingTop = "0px";
   $("rows").innerHTML = "";
   $("graphSvg").innerHTML = "";
   $("empty").hidden = false;
@@ -632,88 +637,209 @@ function laneX(col) {
   return GRAPH_PAD + col * LANE_W;
 }
 
+/** Rows drawn above and below the visible part of the graph. */
+const OVERSCAN = 20;
+
+/**
+ * Prepares the graph for drawing. Only the rows in view are put in the page (see
+ * renderWindow), so histories with tens of thousands of commits stay fast.
+ */
 function renderGraph() {
   const rows = state.rows;
   const wip = hasWip();
-  const off = wip ? 1 : 0;
   $("empty").hidden = true;
   if (state.repo && !rows.length && !wip) {
+    state.graph = null;
+    $("graphBody").style.height = "";
+    $("rows").style.paddingTop = "0px";
     $("rows").innerHTML = `<div class="empty"><p>No commits yet. Make some changes and commit them.</p></div>`;
     $("graphSvg").innerHTML = "";
     $("loadMore").hidden = true;
     return;
   }
-
   const graphW = Math.min(MAX_GRAPH_W, Math.max(90, GRAPH_PAD * 2 + Math.max(state.width - 1, 0) * LANE_W + 8));
   document.documentElement.style.setProperty("--graph-w", graphW + "px");
+  const index = new Map(rows.map((r, i) => [r.sha, i]));
+  state.graph = {
+    off: wip ? 1 : 0,
+    count: rows.length + (wip ? 1 : 0),
+    headRow: index.has(state.status?.head) ? index.get(state.status.head) : -1,
+    graphW,
+    index,
+    filter: state.filter.toLowerCase(),
+    range: null,
+  };
+  $("graphBody").style.height = `${state.graph.count * ROW_H}px`;
+  $("loadMore").hidden = !state.loadingMore;
+  renderWindow(true);
+}
 
-  // Ref badges get the colour of the lane they sit on.
-  const html = [];
-  const headRow = rows.findIndex((r) => r.sha === state.status?.head);
-  if (wip) {
-    const f = state.status.files;
-    const staged = f.filter((x) => x.index !== "." && !x.untracked && !x.conflicted).length;
-    const conflicts = conflictCount();
-    html.push(`<div class="row wip ${state.selected === "WIP" ? "selected" : ""}" data-sha="WIP">
-      <div class="col-graph"></div>
-      <div class="col-msg"><span class="ref current" style="--c:${laneColor(headRow >= 0 ? rows[headRow].color : 0)}">WIP</span>
-        <span class="subject">${f.length} changed file${f.length === 1 ? "" : "s"}${staged ? ` · ${staged} staged` : ""}${conflicts ? ` · ⚠ ${conflicts} conflicted` : ""}</span></div>
-      <div class="col-author"></div><div class="col-date"></div><div class="col-sha">// // //</div></div>`);
-  }
-  const filter = state.filter.toLowerCase();
-  for (const r of rows) {
-    const c = laneColor(r.color);
-    const refs = r.refs
-      .map((ref) => {
-        const drag = ref.kind === "branch" || ref.kind === "remote" ? `draggable="true"` : "";
-        return `<span class="ref ${ref.kind}${ref.current ? " current" : ""}" ${drag} data-ref="${esc(ref.name)}" data-kind="${ref.kind === "branch" ? "local" : ref.kind}" style="--c:${c}" title="${esc(ref.kind)}: ${esc(ref.name)}">${esc(ref.name)}</span>`;
-      })
-      .join("");
-    const match = !filter || r.subject.toLowerCase().includes(filter) || r.author.toLowerCase().includes(filter) || r.sha.startsWith(filter);
-    html.push(`<div class="row${isSelectedRow(r.sha) ? " selected" : ""}${match ? "" : " dim"}" data-sha="${r.sha}">
+function rowHtml(r) {
+  const g = state.graph;
+  const c = laneColor(r.color);
+  const refs = r.refs
+    .map((ref) => {
+      const drag = ref.kind === "branch" || ref.kind === "remote" ? `draggable="true"` : "";
+      return `<span class="ref ${ref.kind}${ref.current ? " current" : ""}" ${drag} data-ref="${esc(ref.name)}" data-kind="${ref.kind === "branch" ? "local" : ref.kind}" style="--c:${c}" title="${esc(ref.kind)}: ${esc(ref.name)}">${esc(ref.name)}</span>`;
+    })
+    .join("");
+  const f = g.filter;
+  const match = !f || r.subject.toLowerCase().includes(f) || r.author.toLowerCase().includes(f) || r.sha.startsWith(f);
+  const onPath = state.hoverPath && state.hoverPath.has(r.sha);
+  return `<div class="row${isSelectedRow(r.sha) ? " selected" : ""}${match ? "" : " dim"}${onPath ? " on-path" : ""}" data-sha="${r.sha}">
       <div class="col-graph"></div>
       <div class="col-msg">${refs}<span class="subject" title="${esc(r.subject)}">${esc(r.subject)}</span></div>
       <div class="col-author" title="${esc(r.author)} <${esc(r.email)}>">${esc(r.author)}</div>
       <div class="col-date" title="${esc(fullTime(r.time))}">${esc(relTime(r.time))}</div>
-      <div class="col-sha">${short(r.sha)}</div></div>`);
-  }
-  $("rows").innerHTML = html.join("");
-  $("loadMore").hidden = !state.truncated;
+      <div class="col-sha">${short(r.sha)}</div></div>`;
+}
 
-  // SVG: segments first, then nodes on top.
+function wipRowHtml() {
+  const g = state.graph;
+  const rows = state.rows;
+  const f = state.status.files;
+  const staged = f.filter((x) => x.index !== "." && !x.untracked && !x.conflicted).length;
+  const conflicts = conflictCount();
+  return `<div class="row wip ${state.selected === "WIP" ? "selected" : ""}" data-sha="WIP">
+      <div class="col-graph"></div>
+      <div class="col-msg"><span class="ref current" style="--c:${laneColor(g.headRow >= 0 ? rows[g.headRow].color : 0)}">WIP</span>
+        <span class="subject">${f.length} changed file${f.length === 1 ? "" : "s"}${staged ? ` · ${staged} staged` : ""}${conflicts ? ` · ⚠ ${conflicts} conflicted` : ""}</span></div>
+      <div class="col-author"></div><div class="col-date"></div><div class="col-sha">// // //</div></div>`;
+}
+
+/** Draws the rows (and their part of the graph) currently scrolled into view. */
+function renderWindow(force = false) {
+  const g = state.graph;
+  if (!g) return;
+  const sc = $("graphScroll");
+  const first = Math.max(0, Math.floor(sc.scrollTop / ROW_H) - OVERSCAN);
+  const last = Math.min(g.count - 1, Math.ceil((sc.scrollTop + sc.clientHeight) / ROW_H) + OVERSCAN);
+  if (!force && g.range && g.range[0] === first && g.range[1] === last) return;
+  g.range = [first, last];
+  const rows = state.rows;
+
+  // Row index i in the list (0 = WIP when present) ↔ commit index i - off.
+  const html = [];
+  for (let i = first; i <= last; i++) html.push(i < g.off ? wipRowHtml() : rowHtml(rows[i - g.off]));
+  $("rows").style.paddingTop = `${first * ROW_H}px`;
+  $("rows").innerHTML = html.join("");
+
   const svg = $("graphSvg");
-  const h = (rows.length + off) * ROW_H;
-  svg.setAttribute("width", graphW);
+  const top = first * ROW_H;
+  const h = (last - first + 1) * ROW_H;
+  svg.style.top = `${top}px`;
+  svg.setAttribute("width", g.graphW);
   svg.setAttribute("height", h);
-  svg.setAttribute("viewBox", `0 0 ${graphW} ${h}`);
-  const yOf = (row, anchor) => (row + off) * ROW_H + anchor * (ROW_H / 2);
-  const paths = [];
-  rows.forEach((r, i) => {
-    for (const s of r.segments) {
-      const x1 = laneX(s.x1), x2 = laneX(s.x2), y1 = yOf(i, s.y1), y2 = yOf(i, s.y2);
-      const d = x1 === x2 ? `M${x1} ${y1}V${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
-      paths.push(`<path d="${d}" stroke="${laneColor(s.color)}"/>`);
+  svg.setAttribute("viewBox", `0 ${top} ${g.graphW} ${h}`);
+  const y = (i, anchor) => i * ROW_H + anchor * (ROW_H / 2);
+  const curve = (x1, y1, x2, y2) => (x1 === x2 ? `M${x1} ${y1}V${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`);
+  const paths = [], nodes = [];
+  for (let i = Math.max(first, g.off); i <= last; i++) {
+    for (const s of rows[i - g.off].segments) {
+      paths.push(`<path d="${curve(laneX(s.x1), y(i, s.y1), laneX(s.x2), y(i, s.y2))}" stroke="${laneColor(s.color)}"/>`);
     }
-  });
-  const nodes = [];
-  if (wip) {
-    const col = headRow >= 0 ? rows[headRow].col : 0;
-    const x = laneX(col), c = headRow >= 0 ? laneColor(rows[headRow].color) : LANES[0];
-    if (headRow >= 0) paths.push(`<path d="M${x} ${ROW_H / 2}V${yOf(headRow, 1)}" stroke="${c}" stroke-dasharray="3 3" opacity=".8"/>`);
+  }
+  if (g.off && first === 0) {
+    const head = g.headRow >= 0 ? rows[g.headRow] : null;
+    const x = laneX(head ? head.col : 0), c = head ? laneColor(head.color) : LANES[0];
+    if (head) paths.push(`<path d="M${x} ${ROW_H / 2}V${y(g.headRow + g.off, 1)}" stroke="${c}" stroke-dasharray="3 3" opacity=".8"/>`);
     nodes.push(`<circle cx="${x}" cy="${ROW_H / 2}" r="${NODE_R}" fill="var(--bg)" stroke="${c}" stroke-width="2" stroke-dasharray="3 2"/>`);
   }
-  rows.forEach((r, i) => {
-    const x = laneX(r.col), y = yOf(i, 1), c = laneColor(r.color);
-    const isHead = r.sha === state.status?.head;
-    if (isHead) nodes.push(`<circle cx="${x}" cy="${y}" r="${NODE_R + 4}" fill="none" stroke="${c}" stroke-width="1.5" opacity=".7"/>`);
+  for (let i = Math.max(first, g.off); i <= last; i++) {
+    const r = rows[i - g.off];
+    const x = laneX(r.col), cy = y(i, 1), c = laneColor(r.color);
+    if (r.sha === state.status?.head) nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R + 4}" fill="none" stroke="${c}" stroke-width="1.5" opacity=".7"/>`);
     if (r.parents.length > 1) {
-      nodes.push(`<circle cx="${x}" cy="${y}" r="${NODE_R - 2.5}" fill="var(--bg)" stroke="${c}" stroke-width="2.5"/>`);
+      nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R - 2.5}" fill="var(--bg)" stroke="${c}" stroke-width="2.5"/>`);
     } else {
-      nodes.push(`<circle cx="${x}" cy="${y}" r="${NODE_R}" fill="${c}" stroke="var(--bg)" stroke-width="2"/>`);
-      nodes.push(`<text x="${x}" y="${y + 3}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#1c1a17" font-family="IBM Plex Mono, monospace">${esc(initials(r.author))}</text>`);
+      nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R}" fill="${c}" stroke="var(--bg)" stroke-width="2"/>`);
+      nodes.push(`<text x="${x}" y="${cy + 3}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#1c1a17" font-family="IBM Plex Mono, monospace">${esc(initials(r.author))}</text>`);
     }
-  });
-  svg.innerHTML = `<g fill="none" stroke-width="2" stroke-linecap="round">${paths.join("")}</g><g>${nodes.join("")}</g>`;
+  }
+  svg.innerHTML = `<g class="g-lines" fill="none" stroke-width="2" stroke-linecap="round">${paths.join("")}</g>${pathOverlay(first, last)}<g>${nodes.join("")}</g>`;
+  svg.classList.toggle("has-path", !!state.hoverPath);
+
+  // Keep loading older commits as the bottom comes into view.
+  if (state.truncated && !state.loadingMore && last >= g.count - OVERSCAN) loadMoreCommits();
+}
+
+/**
+ * The first-parent path from the hovered commit, drawn on top of the graph. Lanes never move
+ * sideways, so the line from a commit to its first parent runs straight down the commit's
+ * own column and bends into the parent's column in the parent's row.
+ */
+function pathOverlay(first, last) {
+  const p = state.hoverPathList;
+  if (!p || !p.length) return "";
+  const g = state.graph, rows = state.rows;
+  const y = (i, anchor) => (i + g.off) * ROW_H + anchor * (ROW_H / 2);
+  const parts = [];
+  for (let k = 0; k < p.length; k++) {
+    const a = p[k];
+    const b = p[k + 1];
+    const end = b === undefined ? rows.length - 1 : b; // parent not loaded: run to the bottom
+    if (end + g.off < first || a + g.off > last) continue;
+    const x = laneX(rows[a].col);
+    if (b === undefined) {
+      if (rows[a].parents.length) parts.push(`M${x} ${y(a, 1)}V${y(end, 2)}`);
+      continue;
+    }
+    const bx = laneX(rows[b].col), by = y(b, 1);
+    const bend = y(b, 0);
+    parts.push(x === bx ? `M${x} ${y(a, 1)}V${by}` : `M${x} ${y(a, 1)}V${bend}C${x} ${(bend + by) / 2} ${bx} ${(bend + by) / 2} ${bx} ${by}`);
+  }
+  const c = laneColor(rows[p[0]].color);
+  return `<path class="g-path" d="${parts.join("")}" stroke="${c}" fill="none" stroke-width="4.5" stroke-linecap="round"/>`;
+}
+
+/** Highlights the first-parent ancestry of a commit (null clears). */
+function setHoverPath(sha) {
+  if ((state.hoverSha || null) === (sha || null)) return;
+  state.hoverSha = sha;
+  if (!sha || !state.graph || !state.graph.index.has(sha)) {
+    state.hoverPath = null;
+    state.hoverPathList = null;
+  } else {
+    const list = [];
+    let i = state.graph.index.get(sha);
+    while (i !== undefined && list.length < 5000) {
+      list.push(i);
+      const parent = state.rows[i].parents[0];
+      i = parent === undefined ? undefined : state.graph.index.get(parent);
+    }
+    state.hoverPathList = list;
+    state.hoverPath = new Set(list.map((k) => state.rows[k].sha));
+  }
+  renderWindow(true);
+}
+
+async function loadMoreCommits() {
+  state.loadingMore = true;
+  $("loadMore").hidden = false;
+  // Each request returns the whole history so far, so grow the window geometrically.
+  state.limit = Math.min(state.limit * 2, 200000);
+  try {
+    await reload();
+  } catch (e) {
+    fail(e, "load more commits");
+  } finally {
+    state.loadingMore = false;
+    $("loadMore").hidden = true;
+  }
+  renderWindow(true); // still at the bottom? fetch the next page
+}
+
+/** Scrolls the graph so the row for `sha` ("WIP" or a commit) is visible. */
+function scrollToRow(sha) {
+  const g = state.graph;
+  if (!g) return;
+  const i = sha === "WIP" ? 0 : g.index.has(sha) ? g.index.get(sha) + g.off : -1;
+  if (i < 0) return;
+  const sc = $("graphScroll");
+  const top = i * ROW_H;
+  if (top < sc.scrollTop) sc.scrollTop = top;
+  else if (top + ROW_H > sc.scrollTop + sc.clientHeight) sc.scrollTop = top + ROW_H - sc.clientHeight;
+  renderWindow();
 }
 
 /** Rows highlighted as selected: the selected commit, or both ends of a comparison. */
@@ -723,15 +849,8 @@ function isSelectedRow(sha) {
 }
 
 function markSelected() {
-  for (const el of document.querySelectorAll(".row.selected")) el.classList.remove("selected");
-  let first = null;
-  for (const el of document.querySelectorAll(".row[data-sha]")) {
-    if (isSelectedRow(el.dataset.sha)) {
-      el.classList.add("selected");
-      first = first || el;
-    }
-  }
-  if (first && state.selected !== "COMPARE") first.scrollIntoView({ block: "nearest" });
+  for (const el of document.querySelectorAll(".row[data-sha]")) el.classList.toggle("selected", isSelectedRow(el.dataset.sha));
+  if (state.selected && state.selected !== "COMPARE") scrollToRow(state.selected);
 }
 
 // ---------------------------------------------------------------- commit detail
@@ -1986,7 +2105,19 @@ function wire() {
     }
     showMenu(e.clientX, e.clientY, commitMenuItems(sha));
   };
-  $("loadMore").onclick = (e) => { state.limit += PAGE; run(e.currentTarget, "load more commits", async () => {}); };
+  $("graphScroll").addEventListener("scroll", () => {
+    if (!state.scrollQueued) {
+      state.scrollQueued = true;
+      requestAnimationFrame(() => { state.scrollQueued = false; renderWindow(); });
+    }
+  }, { passive: true });
+  window.addEventListener("resize", () => renderWindow());
+  // Hovering a commit highlights its first-parent path (the line of history it belongs to).
+  $("rows").addEventListener("mouseover", (e) => {
+    const row = e.target.closest(".row[data-sha]");
+    setHoverPath(row && row.dataset.sha !== "WIP" ? row.dataset.sha : null);
+  });
+  $("rows").addEventListener("mouseleave", () => setHoverPath(null));
   $("search").oninput = (e) => { state.filter = e.target.value.trim(); renderGraph(); };
   $("search").onkeydown = (e) => {
     if (e.key === "Enter") { e.preventDefault(); runSearch(); }
@@ -2135,7 +2266,7 @@ function wire() {
     else if (e.key === "r" && state.repo) reload().catch((err) => fail(err, "refresh"));
     else if (["ArrowDown", "ArrowUp", "j", "k"].includes(e.key) && state.repo) {
       e.preventDefault();
-      const ids = [...document.querySelectorAll(".row[data-sha]")].map((r) => r.dataset.sha);
+      const ids = [...(hasWip() ? ["WIP"] : []), ...state.rows.map((r) => r.sha)];
       const i = ids.indexOf(state.selected);
       const next = ids[Math.max(0, Math.min(ids.length - 1, i + (e.key === "ArrowDown" || e.key === "j" ? 1 : -1)))];
       if (next && next !== state.selected) { closeDiff(); next === "WIP" ? selectWip() : selectCommit(next); }

@@ -324,7 +324,7 @@ struct GraphQuery {
 
 async fn repo_graph(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<GraphQuery>) -> ApiResult {
     let r = repo(&s, &id).await?;
-    let limit = q.limit.unwrap_or(1000).clamp(1, 20_000);
+    let limit = q.limit.unwrap_or(1000).clamp(1, 200_000);
     let commits = git::log(&r.path, limit).await?;
     let truncated = commits.len() >= limit;
     let g = graph::layout(commits);

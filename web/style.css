@@ -256,8 +256,8 @@ input:focus, textarea:focus { border-color: var(--accent); }
   height: 36px;
 }
 .graph-head > div { padding: 0 10px; white-space: nowrap; }
-.graph-head .col-msg { display: flex; align-items: center; gap: 12px; }
-.search { flex: 1; max-width: 360px; padding: 2px 8px; font: 12px var(--font); }
+.graph-head .col-msg { display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.search { flex: 1; min-width: 60px; max-width: 360px; padding: 2px 8px; font: 12px var(--font); }
 
 .graph-scroll { flex: 1; overflow: auto; position: relative; }
 .graph-body { position: relative; min-width: 700px; }
@@ -298,7 +298,12 @@ input:focus, textarea:focus { border-color: var(--accent); }
 
 .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
 .ascii { color: var(--accent); font-size: 13px; text-shadow: 2px 2px 0 var(--shadow); display: inline-block; text-align: left; }
-.load-more { margin: 14px auto 30px; display: flex; }
+.load-more { padding: 10px 14px 24px; color: var(--faint); font-style: italic; text-align: center; }
+/* hovered commit's first-parent path */
+.graph-svg.has-path .g-lines { opacity: .35; transition: opacity .12s; }
+.graph-svg .g-path { filter: drop-shadow(0 0 3px currentColor); }
+.row.on-path .subject { color: var(--text); }
+.graph-scroll:has(.on-path) .row:not(.on-path):not(.selected) .subject { opacity: .55; }
 
 /* ---------------------------------------------------------------- detail panel */
 
