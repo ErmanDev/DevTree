@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -38,12 +38,11 @@ pub struct Net {
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     creds: Mutex<HashMap<String, Cred>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    exe: Option<PathBuf>,
 }
 
 impl Net {
     pub fn new() -> Self {
-        Net { exe: std::env::current_exe().ok(), ..Default::default() }
+        Net::default()
     }
 
     fn lock_for(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -63,13 +62,12 @@ impl Net {
     /// Settings that let git use credentials typed into DevTree, if there are any.
     fn credential_extra(&self, extra: &mut Extra) {
         let creds: Vec<Cred> = self.creds.lock().unwrap().values().cloned().collect();
-        let Some(exe) = &self.exe else { return };
+        let Some(helper) = git::self_command("credential-helper") else { return };
         if creds.is_empty() {
             return;
         }
         // `!` makes git run this through the shell and append the action (get/store/erase).
-        let path = exe.to_string_lossy().replace('\\', "/").replace('\'', r"'\''");
-        extra.config.push(format!("credential.helper=!'{path}' credential-helper"));
+        extra.config.push(format!("credential.helper=!{helper}"));
         extra.env.push((CREDS_ENV, serde_json::to_string(&creds).unwrap_or_default()));
     }
 

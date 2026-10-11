@@ -153,6 +153,21 @@
     </div>
   </div>
 
+  <div id="rebaseModal" class="modal" hidden>
+    <div class="modal-card rebase-card">
+      <div class="dialog-title">Interactive rebase <small id="rbOnto"></small></div>
+      <p class="rb-hint">Commits are replayed <b>top to bottom</b>. Drag ⣿ (or use ▲▼) to reorder.
+        <b>squash</b> melds a commit into the one above and combines messages; <b>fixup</b> does the same but keeps only the message above.</p>
+      <div id="rbWarn" class="rb-warn" hidden></div>
+      <ul id="rbList" class="rb-list"></ul>
+      <div class="modal-foot dialog-foot rb-foot">
+        <span id="rbSummary" class="hint"></span>
+        <button type="button" class="btn" id="rbCancel">Cancel</button>
+        <button type="button" class="btn btn-accent" id="rbStart">Start rebase</button>
+      </div>
+    </div>
+  </div>
+
   <div id="dialog" class="modal" hidden>
     <form class="modal-card dialog-card" id="dialogForm">
       <div class="dialog-title" id="dialogTitle"></div>

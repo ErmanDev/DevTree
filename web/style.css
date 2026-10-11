@@ -684,6 +684,41 @@ h3 .warn { color: var(--del); }
 .cmp-sum { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
 .cmp-commits li { font-size: 12px; }
 
+/* ---------------------------------------------------------------- interactive rebase */
+
+.rebase-card { width: min(860px, calc(100vw - 32px)); }
+.rebase-card .dialog-title small { font: 13px var(--font); color: var(--muted); margin-left: 8px; }
+.rb-hint { margin: 0; padding: 10px 16px; color: var(--muted); font-size: 12px; border-bottom: 1px dashed var(--line); }
+.rb-warn { padding: 8px 16px; color: var(--accent-2); font-size: 12px; border-bottom: 1px dashed var(--line); }
+.rb-list { list-style: none; margin: 0; padding: 6px 10px; overflow-y: auto; max-height: 56vh; }
+.rb-list li {
+  display: grid;
+  grid-template-columns: 18px 96px 64px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 8px;
+  border: 2px solid transparent;
+  border-radius: 2px;
+}
+.rb-list li + li { border-top-color: var(--line-soft); }
+.rb-list li.drag-over { border-color: var(--accent); border-style: dashed; }
+.rb-list li.dragging { opacity: .4; }
+.rb-handle { cursor: grab; color: var(--faint); user-select: none; line-height: 26px; }
+.rb-list select { font: 12px var(--font); color: var(--text); background: var(--bg); border: 2px solid var(--line); border-radius: var(--radius); padding: 3px 4px; }
+.rb-sha { color: var(--faint); font-size: 12px; line-height: 26px; }
+.rb-msg { min-width: 0; line-height: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-msg textarea { width: 100%; min-height: 54px; resize: vertical; font: 12px/1.4 var(--font); }
+.rb-move { display: flex; gap: 2px; }
+.rb-move .mini { padding: 0 5px; }
+.rb-list li.a-reword select { border-color: var(--accent-2); color: var(--accent-2); }
+.rb-list li.a-squash select, .rb-list li.a-fixup select { border-color: #6fa3c7; color: #6fa3c7; }
+.rb-list li.a-squash, .rb-list li.a-fixup { margin-left: 22px; }
+.rb-list li.a-drop .rb-msg { text-decoration: line-through; color: var(--faint); }
+.rb-list li.a-drop select { border-color: var(--del); color: var(--del); }
+.rb-foot { gap: 10px; padding-top: 12px; }
+.rb-foot .hint { flex: 1; }
+.rb-foot .hint.bad { color: var(--del); }
+
 /* ---------------------------------------------------------------- dialog */
 
 .dialog-card { width: min(460px, calc(100vw - 32px)); }

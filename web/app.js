@@ -1208,6 +1208,7 @@ function commitMenuItems(sha) {
     items.push({ label: `Merge this commit into ${headLabel()}`, fn: () => mergeInto(sha) });
     items.push({ label: `Rebase ${headLabel()} onto this commit`, fn: () => rebaseOnto(sha) });
     items.push({ label: `Cherry-pick onto ${headLabel()}`, fn: () => cherryPick(sha) });
+    items.push({ label: `Interactive rebase from here…`, fn: () => openInteractiveRebase(sha) });
   }
   if (!isHead && state.status?.head) items.push({ label: `Compare with ${headLabel()}`, fn: () => { closeDiff(); openCompare(sha, currentBranch() || state.status.head); } });
   items.push(
@@ -1255,6 +1256,162 @@ async function resetTo(sha) {
   const mode = RESET_MODES[v.mode];
   if (mode === "hard" && hasWip() && !(await confirmBox("Discard uncommitted changes?", "A hard reset also throws away your uncommitted changes. This cannot be undone.", "Reset hard", true))) return;
   run(null, `reset --${mode} to ${short(sha)}`, () => repoApi("POST", "/reset", { target: sha, mode }));
+}
+
+// ---------------------------------------------------------------- interactive rebase
+
+const RB_ACTIONS = ["pick", "reword", "squash", "fixup", "drop"];
+
+/** Opens the rebase editor for the commits after `base` on the current branch. */
+async function openInteractiveRebase(base) {
+  let plan;
+  try {
+    plan = await repoApi("GET", `/rebase/plan?base=${base}`);
+  } catch (e) {
+    return fail(e, "interactive rebase");
+  }
+  state.rb = {
+    base: plan.base,
+    steps: plan.commits.map((c, i) => ({ sha: c.sha, subject: c.subject, author: c.author, action: "pick", message: null, originalIndex: i })),
+  };
+  $("rbOnto").textContent = `${plan.commits.length} commit${plan.commits.length === 1 ? "" : "s"} on ${headLabel()} after ${commitLabel(plan.base)}`;
+  const warn = [];
+  if (plan.merges) warn.push(`⚠ ${plan.merges} merge commit${plan.merges === 1 ? "" : "s"} in this range will be flattened (their changes are kept, the merges themselves are not).`);
+  if (hasWip()) warn.push("Your uncommitted changes are stashed before the rebase and restored afterwards.");
+  $("rbWarn").hidden = !warn.length;
+  $("rbWarn").innerHTML = warn.map(esc).join("<br>");
+  $("rebaseModal").hidden = false;
+  renderRebase();
+}
+
+function closeRebase() {
+  $("rebaseModal").hidden = true;
+  state.rb = null;
+}
+
+/** Validation message for the current plan, or "" when it can run. */
+function rebaseProblem() {
+  const first = state.rb.steps.find((s) => s.action !== "drop");
+  if (!first) return "Dropping every commit would empty the branch — use Reset instead.";
+  if (first.action === "squash" || first.action === "fixup") return `"${first.subject}" can't be squashed: there's nothing above it to meld into.`;
+  const empty = state.rb.steps.find((s) => s.action === "reword" && !(s.message || "").trim());
+  if (empty) return `Write a new message for "${empty.subject}".`;
+  return "";
+}
+
+function renderRebase() {
+  const rb = state.rb;
+  if (!rb) return;
+  $("rbList").innerHTML = rb.steps.map((s, i) => `<li data-rb="${i}" class="a-${s.action}">
+      <span class="rb-handle" draggable="true" title="Drag to reorder">⣿</span>
+      <select data-rb-action="${i}">${RB_ACTIONS.map((a) => `<option ${a === s.action ? "selected" : ""}>${a}</option>`).join("")}</select>
+      <span class="rb-sha">${short(s.sha)}</span>
+      <span class="rb-msg" title="${esc(s.subject)} — ${esc(s.author)}">${s.action === "reword"
+        ? `<textarea data-rb-msg="${i}" spellcheck="false">${esc(s.message ?? "")}</textarea>`
+        : esc(s.subject)}</span>
+      <span class="rb-move"><button class="mini" data-rb-move="${i}:-1" ${i === 0 ? "disabled" : ""} title="Move up">▲</button><button class="mini" data-rb-move="${i}:1" ${i === rb.steps.length - 1 ? "disabled" : ""} title="Move down">▼</button></span>
+    </li>`).join("");
+  updateRebaseSummary();
+}
+
+function updateRebaseSummary() {
+  const rb = state.rb;
+  const count = (a) => rb.steps.filter((s) => s.action === a).length;
+  const moved = rb.steps.some((s, i) => s.originalIndex !== undefined && s.originalIndex !== i);
+  const parts = [];
+  for (const a of ["reword", "squash", "fixup", "drop"]) if (count(a)) parts.push(`${count(a)} ${a}`);
+  if (moved) parts.push("reordered");
+  const problem = rebaseProblem();
+  $("rbSummary").textContent = problem || (parts.length ? parts.join(" · ") : "no changes yet");
+  $("rbSummary").classList.toggle("bad", !!problem);
+  $("rbStart").disabled = !!problem || (!parts.length);
+}
+
+async function setRebaseAction(i, action) {
+  const step = state.rb.steps[i];
+  step.action = action;
+  if (action === "reword" && step.message === null) {
+    // Start from the full current message, not just its first line.
+    step.message = step.subject;
+    renderRebase();
+    try {
+      const c = await repoApi("GET", `/commit/${step.sha}`);
+      if (state.rb && state.rb.steps[i] === step && step.message === step.subject) {
+        step.message = c.message;
+        renderRebase();
+      }
+    } catch { /* keep the subject */ }
+    return;
+  }
+  renderRebase();
+}
+
+function moveRebaseStep(from, to) {
+  const steps = state.rb.steps;
+  if (to < 0 || to >= steps.length || from === to) return;
+  const [s] = steps.splice(from, 1);
+  steps.splice(to, 0, s);
+  renderRebase();
+}
+
+async function startRebase() {
+  const rb = state.rb;
+  if (!rb || rebaseProblem()) return;
+  const steps = rb.steps.map((s) => ({ sha: s.sha, action: s.action, message: s.action === "reword" ? s.message : null }));
+  closeRebase();
+  const res = await run(null, `interactive rebase of ${headLabel()}`, () => repoApi("POST", "/rebase/interactive", { base: rb.base, steps }));
+  if (res && !hasWip()) selectCommit(state.status.head);
+}
+
+function wireRebase() {
+  const list = $("rbList");
+  list.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-rb-action]");
+    if (sel) setRebaseAction(+sel.dataset.rbAction, sel.value);
+  });
+  list.addEventListener("input", (e) => {
+    const ta = e.target.closest("[data-rb-msg]");
+    if (ta) { state.rb.steps[+ta.dataset.rbMsg].message = ta.value; updateRebaseSummary(); }
+  });
+  list.addEventListener("click", (e) => {
+    const mv = e.target.closest("[data-rb-move]");
+    if (!mv) return;
+    const [i, d] = mv.dataset.rbMove.split(":").map(Number);
+    moveRebaseStep(i, i + d);
+  });
+  // Drag to reorder (separate from branch drag & drop, which only handles [data-ref]).
+  let dragFrom = null;
+  list.addEventListener("dragstart", (e) => {
+    const li = e.target.closest && e.target.closest("li[data-rb]");
+    if (!li) return;
+    dragFrom = +li.dataset.rb;
+    li.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", li.dataset.rb);
+  });
+  list.addEventListener("dragover", (e) => {
+    const li = e.target.closest("li[data-rb]");
+    if (dragFrom === null || !li) return;
+    e.preventDefault();
+    for (const x of list.querySelectorAll(".drag-over")) x.classList.remove("drag-over");
+    li.classList.add("drag-over");
+  });
+  list.addEventListener("drop", (e) => {
+    const li = e.target.closest("li[data-rb]");
+    if (dragFrom === null || !li) return;
+    e.preventDefault();
+    const to = +li.dataset.rb;
+    const from = dragFrom;
+    dragFrom = null;
+    moveRebaseStep(from, to);
+  });
+  list.addEventListener("dragend", () => {
+    dragFrom = null;
+    for (const x of list.querySelectorAll(".drag-over, .dragging")) x.classList.remove("drag-over", "dragging");
+  });
+  $("rbCancel").onclick = closeRebase;
+  $("rbStart").onclick = startRebase;
+  $("rebaseModal").onclick = (e) => { if (e.target.id === "rebaseModal") closeRebase(); };
 }
 
 // ---------------------------------------------------------------- remotes
@@ -2245,6 +2402,7 @@ function wire() {
   $("cloneUrl").onkeydown = (e) => { if (e.key === "Enter") doClone(); };
 
   wireDragAndDrop();
+  wireRebase();
 
   // Global
   document.addEventListener("click", (e) => {
@@ -2257,11 +2415,12 @@ function wire() {
       $("pullMenu").hidden = true;
       $("fetchMenu").hidden = true;
       if (state.closeDialog) state.closeDialog();
+      else if (!$("rebaseModal").hidden) closeRebase();
       else if (!$("modal").hidden) closeModal();
       else closeDiff();
       return;
     }
-    if (state.closeDialog || e.target.matches("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (state.closeDialog || !$("rebaseModal").hidden || e.target.matches("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "/") { e.preventDefault(); $("search").focus(); }
     else if (e.key === "r" && state.repo) reload().catch((err) => fail(err, "refresh"));
     else if (["ArrowDown", "ArrowUp", "j", "k"].includes(e.key) && state.repo) {

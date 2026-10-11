@@ -86,7 +86,7 @@ pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extr
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         // `--continue` steps would otherwise open an editor for the commit message.
-        .env("GIT_EDITOR", "true")
+        .env("GIT_EDITOR", self_command("edit-message").unwrap_or_else(|| "true".into()))
         .env("LC_ALL", "C")
         .envs(extra.env.iter().map(|(k, v)| (*k, v.as_str())))
         .stdin(if extra.stdin.is_some() { Stdio::piped() } else { Stdio::null() })
@@ -160,6 +160,23 @@ pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extr
         stderr: String::from_utf8_lossy(&stderr).into_owned(),
     })
 }
+
+static SELF_EXE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Remembers DevTree's own executable, so git can call back into it (editors, helpers).
+pub fn set_self_exe(path: &Path) {
+    // Single-quoted for the shell git runs editors through; forward slashes also suit Windows' sh.
+    let quoted = path.to_string_lossy().replace('\\', "/").replace('\'', r"'\''");
+    let _ = SELF_EXE.set(format!("'{quoted}'"));
+}
+
+/// A shell command that runs DevTree in one of its helper modes, e.g. `'/path/devtree' write-todo`.
+pub fn self_command(mode: &str) -> Option<String> {
+    SELF_EXE.get().map(|exe| format!("{exe} {mode}"))
+}
+
+/// Holds new commit messages for "reword" steps of an interactive rebase (see `rebase.rs`).
+pub const REWORD_FILE: &str = "devtree-reword.json";
 
 /// Error text for a command the user cancelled.
 pub const CANCELLED: &str = "cancelled by user";
@@ -453,6 +470,10 @@ pub async fn status(dir: &Path) -> Result<Status, String> {
     let mut st = parse_status(&text);
     let git_dir = Path::new(git_dir.trim());
     st.operation = operation(git_dir);
+    if st.operation.is_none() {
+        // A finished or aborted interactive rebase no longer needs its reword messages.
+        let _ = std::fs::remove_file(git_dir.join(REWORD_FILE));
+    }
     st.last_fetch = std::fs::metadata(git_dir.join("FETCH_HEAD"))
         .and_then(|m| m.modified())
         .ok()

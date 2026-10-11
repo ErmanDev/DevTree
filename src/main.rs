@@ -4,6 +4,7 @@ mod explore;
 mod git;
 mod graph;
 mod net;
+mod rebase;
 mod store;
 
 use axum::{
@@ -76,10 +77,28 @@ fn usage(err: &str) -> ! {
 
 fn main() {
     // git runs `devtree credential-helper get` to fetch credentials typed into the UI.
+    // git also runs DevTree as its editor during interactive rebases (see rebase.rs).
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() == Some("credential-helper") {
-        net::credential_helper(args.next().as_deref());
+    let mode = args.next();
+    let arg = args.next();
+    let helper = match mode.as_deref() {
+        Some("credential-helper") => {
+            net::credential_helper(arg.as_deref());
+            Some(Ok(()))
+        }
+        Some("write-todo") => Some(rebase::write_todo(arg.as_deref())),
+        Some("edit-message") => Some(rebase::edit_message(arg.as_deref())),
+        _ => None,
+    };
+    if let Some(result) = helper {
+        if let Err(e) = result {
+            eprintln!("devtree: {e}");
+            std::process::exit(1);
+        }
         return;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        git::set_self_exe(&exe);
     }
     let runtime = tokio::runtime::Runtime::new().expect("failed to start the async runtime");
     runtime.block_on(serve(parse_args()));
@@ -127,6 +146,8 @@ async fn serve(cfg: Config) {
         .route("/repos/{id}/compare/diff", get(explore::compare_diff))
         .route("/repos/{id}/blob", get(actions::blob))
         .route("/repos/{id}/apply", post(actions::apply_patch))
+        .route("/repos/{id}/rebase/plan", get(rebase::plan))
+        .route("/repos/{id}/rebase/interactive", post(rebase::start))
         .route("/repos/{id}/cherry-pick", post(actions::cherry_pick))
         .route("/repos/{id}/revert", post(actions::revert))
         .route("/repos/{id}/reset", post(actions::reset))
