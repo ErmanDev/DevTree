@@ -1,0 +1,46 @@
+{
+  "scene": "rebase",
+  "width": 1440,
+  "height": 860,
+  "beats": [
+    {
+      "image": "promo/rebase-0.png"
+    },
+    {
+      "image": "promo/rebase-1.png",
+      "action": "click",
+      "to": {
+        "x": 386,
+        "y": 440
+      }
+    },
+    {
+      "image": "promo/rebase-2.png",
+      "action": "click",
+      "to": {
+        "x": 386,
+        "y": 500
+      }
+    },
+    {
+      "image": "promo/rebase-3.png",
+      "action": "drag",
+      "from": {
+        "x": 321,
+        "y": 543
+      },
+      "to": {
+        "x": 720,
+        "y": 380
+      }
+    },
+    {
+      "image": "promo/rebase-4.png",
+      "action": "click",
+      "to": {
+        "x": 1072,
+        "y": 585
+      }
+    }
+  ]
+}

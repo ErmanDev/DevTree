@@ -1,10 +1,14 @@
-// The DevTree promo: a CRT boot intro, four features shown on real screenshots, the key facts,
+// The DevTree promo: a CRT boot intro, four features replayed from real app recordings, the key facts,
 // and a call to action, with a voice-over, captions and a retro music bed. Each scene lasts as
 // long as its voice-over line (voiceover/script.json → src/voiceover/lines.ts), and every scene
 // adapts to the composition's shape (16:9 or square).
 import { AbsoluteFill, Audio, Easing, Img, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { C, FONT, REPO, SITE } from "./theme";
 import { MUSIC, VOICE } from "./voiceover/lines";
+import conflictsRec from "../public/promo/conflicts.json";
+import graphRec from "../public/promo/graph.json";
+import rebaseRec from "../public/promo/rebase.json";
+import stagingRec from "../public/promo/staging.json";
 
 const FPS = 30;
 
@@ -14,32 +18,28 @@ const FEATURES: (FeatureProps & { voice: string })[] = [
     kicker: "01 · Commit graph",
     title: "See your whole history",
     body: "Colored lanes, curved merges and author pictures. Smooth even with 30,000 commits.",
-    image: "overview.png",
-    focus: [0.36, 0.42],
+    recording: graphRec as Recording,
   },
   {
     voice: "staging",
     kicker: "02 · Partial staging",
     title: "Stage exactly the lines you mean",
     body: "Click the lines you want. Stage, unstage or discard just those.",
-    image: "partial-staging.png",
-    focus: [0.45, 0.28],
+    recording: stagingRec as Recording,
   },
   {
     voice: "conflicts",
     kicker: "03 · Conflict editor",
     title: "Resolve conflicts side by side",
     body: "Keep yours, take theirs, keep both, or edit by hand. Then continue.",
-    image: "conflicts.png",
-    focus: [0.45, 0.3],
+    recording: conflictsRec as Recording,
   },
   {
     voice: "rebase",
     kicker: "04 · Interactive rebase",
     title: "Rewrite history by drag and drop",
     body: "Reorder, reword, squash, fixup or drop commits in one editor.",
-    image: "interactive-rebase.png",
-    focus: [0.5, 0.5],
+    recording: rebaseRec as Recording,
   },
 ];
 
@@ -49,7 +49,7 @@ type Scene = { key: string; voice: string; lead: number; tail: number; min: numb
 const SCENES: Scene[] = [
   // The line starts as the logo lands.
   { key: "boot", voice: "intro", lead: 36, tail: 18, min: 105, render: () => <Boot /> },
-  ...FEATURES.map(({ voice, ...f }) => ({ key: f.image, voice, lead: 12, tail: 18, min: 120, render: () => <Feature {...f} /> })),
+  ...FEATURES.map(({ voice, ...f }) => ({ key: f.recording.scene, voice, lead: 12, tail: 18, min: 120, render: () => <Feature {...f} /> })),
   { key: "facts", voice: "facts", lead: 10, tail: 15, min: 120, render: () => <Facts /> },
   // Hold the call to action after the last line.
   { key: "outro", voice: "outro", lead: 15, tail: 75, min: 150, render: () => <Outro /> },
@@ -273,15 +273,14 @@ const Boot: React.FC = () => {
   );
 };
 
-type FeatureProps = { kicker: string; title: string; body: string; image: string; focus: [number, number] };
+type FeatureProps = { kicker: string; title: string; body: string; recording: Recording };
 
-const Feature: React.FC<FeatureProps> = ({ kicker, title, body, image, focus }) => {
+const Feature: React.FC<FeatureProps> = ({ kicker, title, body, recording }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames, width } = useVideoConfig();
+  const { fps, width } = useVideoConfig();
   const wide = useWide();
   const fade = useSceneFade();
   const enter = spring({ frame, fps, config: { damping: 18 } });
-  const zoom = interpolate(frame, [0, durationInFrames], [1, 1.16], { easing: Easing.inOut(Easing.quad) });
   const s = width / 1920;
 
   const text = (
@@ -313,12 +312,7 @@ const Feature: React.FC<FeatureProps> = ({ kicker, title, body, image, focus }) 
         ))}
         <span style={{ fontFamily: FONT.mono, fontSize: 17, color: C.faint, marginLeft: 12 }}>DevTree — acme-web</span>
       </div>
-      <div style={{ overflow: "hidden", aspectRatio: "1440 / 860" }}>
-        <Img
-          src={staticFile(image)}
-          style={{ width: "100%", display: "block", transform: `scale(${zoom})`, transformOrigin: `${focus[0] * 100}% ${focus[1] * 100}%` }}
-        />
-      </div>
+      <Playback recording={recording} />
     </div>
   );
 
@@ -341,6 +335,125 @@ const Feature: React.FC<FeatureProps> = ({ kicker, title, body, image, focus }) 
     </AbsoluteFill>
   );
 };
+
+// ------------------------------------------------------------------ recorded interactions
+
+type Point = { x: number; y: number };
+type Beat = { image: string; action?: "hover" | "click" | "drag"; to?: Point; from?: Point };
+/** A recording from tests/e2e/screenshots/promo.shots.js: a screenshot per step, and where the pointer went. */
+export type Recording = { scene: string; width: number; height: number; beats: Beat[] };
+
+const MOVE = 16; // frames to glide to a target
+const CARRY = 20; // frames to carry a dragged item
+const SWAP = 5; // frames for the app to "respond"
+
+/** Plans when each step happens: the pointer moves, acts, then the next screenshot appears. */
+function plan(recording: Recording, duration: number) {
+  const steps = recording.beats.slice(1);
+  const first = 22;
+  const last = duration - 30;
+  const gap = steps.length ? (last - first) / steps.length : 0;
+  let pos: Point = { x: recording.width * 0.9, y: recording.height * 0.95 };
+  return steps.map((beat, i) => {
+    const start = Math.round(first + i * gap);
+    const grab = beat.action === "drag" && beat.from ? beat.from : null;
+    // Dragged items move along the list, so carry them straight down or up from the handle.
+    const to = grab ? { x: grab.x, y: beat.to!.y } : beat.to!;
+    const step = { beat, index: i + 1, start, from: pos, grab, to, arrive: start + MOVE, act: start + MOVE + (grab ? CARRY : 0) };
+    pos = to;
+    return step;
+  });
+}
+
+const ease = Easing.bezier(0.45, 0, 0.2, 1);
+
+const Playback: React.FC<{ recording: Recording }> = ({ recording }) => {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const steps = plan(recording, durationInFrames);
+  const { width: W, height: H, beats } = recording;
+
+  // Which screenshot is showing, and the next one fading in after an action.
+  let shown = 0;
+  let incoming = -1;
+  let blend = 0;
+  for (const st of steps) {
+    const swap = st.act + (st.beat.action === "hover" ? 0 : 2);
+    if (frame >= swap + SWAP) shown = st.index;
+    else if (frame >= swap) {
+      incoming = st.index;
+      blend = (frame - swap) / SWAP;
+    }
+  }
+
+  // Where the pointer is, and whether it is pressed.
+  let pos = steps.length ? steps[0].from : { x: W * 0.9, y: H * 0.95 };
+  let pressed = false;
+  for (const st of steps) {
+    if (frame < st.start) break;
+    if (st.grab) {
+      if (frame < st.arrive) pos = lerp(st.from, st.grab, interpolate(frame, [st.start, st.arrive], [0, 1], { ...clamp, easing: ease }));
+      else {
+        pos = lerp(st.grab, st.to, interpolate(frame, [st.arrive + 4, st.act], [0, 1], { ...clamp, easing: ease }));
+        pressed = frame < st.act + 2;
+      }
+    } else {
+      pos = lerp(st.from, st.to, interpolate(frame, [st.start, st.arrive], [0, 1], { ...clamp, easing: ease }));
+      pressed = st.beat.action === "click" && frame >= st.arrive && frame < st.arrive + 4;
+    }
+  }
+  const arrived = steps.length && frame >= steps[0].start;
+  const parked = arrived ? 1 : interpolate(frame, [8, 18], [0, 1], clamp);
+
+  const pct = (p: Point) => ({ left: `${(p.x / W) * 100}%`, top: `${(p.y / H) * 100}%` });
+  return (
+    <div style={{ position: "relative", aspectRatio: `${W} / ${H}`, overflow: "hidden" }}>
+      <Img src={staticFile(beats[shown].image)} style={{ position: "absolute", inset: 0, width: "100%" }} />
+      {incoming >= 0 && <Img src={staticFile(beats[incoming].image)} style={{ position: "absolute", inset: 0, width: "100%", opacity: blend }} />}
+      {steps
+        .filter((st) => st.beat.action !== "hover")
+        .map((st) => {
+          const at = st.grab ? st.act : st.arrive;
+          const t = interpolate(frame, [at, at + 16], [0, 1], clamp);
+          if (frame < at || t >= 1) return null;
+          return (
+            <div
+              key={st.index}
+              style={{
+                position: "absolute",
+                ...pct(st.to),
+                width: 90,
+                height: 90,
+                marginLeft: -45,
+                marginTop: -45,
+                borderRadius: "50%",
+                border: `4px solid ${C.teal}`,
+                transform: `scale(${0.2 + t})`,
+                opacity: 1 - t,
+              }}
+            />
+          );
+        })}
+      <div style={{ position: "absolute", ...pct(pos), opacity: parked, transform: `scale(${pressed ? 0.86 : 1})`, transformOrigin: "0 0" }}>
+        <Pointer grabbing={pressed && steps.some((st) => st.grab && frame >= st.arrive && frame < st.act + 2)} />
+      </div>
+    </div>
+  );
+};
+
+const lerp = (a: Point, b: Point, t: number): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+/** A chunky retro arrow (or a closed hand while dragging). */
+const Pointer: React.FC<{ grabbing: boolean }> = ({ grabbing }) =>
+  grabbing ? (
+    <svg width="40" height="40" viewBox="0 0 24 24" style={{ marginLeft: -14, marginTop: -10, filter: `drop-shadow(3px 3px 0 ${C.shadow})` }}>
+      <path d="M7 10V8.5a1.5 1.5 0 0 1 3 0V10m0-1.5V7.5a1.5 1.5 0 0 1 3 0V10m0-2a1.5 1.5 0 0 1 3 0v2m0-1a1.5 1.5 0 0 1 3 0v5a7 7 0 0 1-7 7h-1a6 6 0 0 1-5-3l-2.5-4a1.5 1.5 0 0 1 2.5-1.6L7 13v-3" fill="#fff" stroke={C.ink} strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  ) : (
+    <svg width="38" height="46" viewBox="0 0 19 23" style={{ filter: `drop-shadow(3px 3px 0 ${C.shadow})` }}>
+      <path d="M1 1 L1 18 L5.5 14 L8.5 21.5 L12 20 L9 12.8 L15 12.8 Z" fill="#fff" stroke={C.ink} strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
 
 const FACT_TILES = [
   { big: "~3 MB", small: "one small program", color: C.teal },

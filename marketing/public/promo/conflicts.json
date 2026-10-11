@@ -1,0 +1,34 @@
+{
+  "scene": "conflicts",
+  "width": 1440,
+  "height": 860,
+  "beats": [
+    {
+      "image": "promo/conflicts-0.png"
+    },
+    {
+      "image": "promo/conflicts-1.png",
+      "action": "click",
+      "to": {
+        "x": 772,
+        "y": 73
+      }
+    },
+    {
+      "image": "promo/conflicts-2.png",
+      "action": "click",
+      "to": {
+        "x": 451,
+        "y": 310
+      }
+    },
+    {
+      "image": "promo/conflicts-3.png",
+      "action": "click",
+      "to": {
+        "x": 927,
+        "y": 117
+      }
+    }
+  ]
+}

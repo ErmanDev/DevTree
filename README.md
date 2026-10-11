@@ -122,7 +122,13 @@ Until the secret exists, the workflow only checks the links and skips the deploy
 
 ## Promo video
 
-`marketing/` is a [Remotion](https://www.remotion.dev) project that renders DevTree's promo video from code: a narrated, captioned ~50-second tour with a retro music bed, in 16:9 (`DevTreePromo`, 1920×1080) and square (`DevTreeSquare`, 1080×1080). It uses the docs screenshots in `site/img/`, so re-rendering after regenerating them keeps the video current.
+`marketing/` is a [Remotion](https://www.remotion.dev) project that renders DevTree's promo video from code: a narrated, captioned ~50-second tour with a retro music bed, in 16:9 (`DevTreePromo`, 1920×1080) and square (`DevTreeSquare`, 1080×1080). Each feature replays a real interaction with the app: a pointer clicks, drags and hovers, and the app responds.
+
+The interactions are recorded from the real app by `tests/e2e/screenshots/promo.shots.js`. Each step saves a screenshot and the pointer's target in `marketing/public/promo/`. Re-record after UI changes (needs `cargo build` first):
+
+```sh
+cd tests/e2e && npx playwright test --config screenshots.config.js promo
+```
 
 ```sh
 cd marketing

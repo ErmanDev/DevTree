@@ -1,0 +1,34 @@
+{
+  "scene": "graph",
+  "width": 1440,
+  "height": 860,
+  "beats": [
+    {
+      "image": "promo/graph-0.png"
+    },
+    {
+      "image": "promo/graph-1.png",
+      "action": "hover",
+      "to": {
+        "x": 656,
+        "y": 253
+      }
+    },
+    {
+      "image": "promo/graph-2.png",
+      "action": "click",
+      "to": {
+        "x": 424,
+        "y": 223
+      }
+    },
+    {
+      "image": "promo/graph-3.png",
+      "action": "click",
+      "to": {
+        "x": 558,
+        "y": 133
+      }
+    }
+  ]
+}
