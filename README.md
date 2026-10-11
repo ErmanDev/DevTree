@@ -106,7 +106,7 @@ cd tests/e2e && npx playwright test -c screenshots.config.js
 
 `.github/workflows/docs.yml` deploys `site/` to Firebase Hosting. Pushes to `main` go to the live site, and pull requests from this repository get a 7-day preview link. One-time setup:
 
-1. Create a project in the [Firebase console](https://console.firebase.google.com/) and put its ID in `.firebaserc` in place of `devtree-docs`.
+1. Create a project in the [Firebase console](https://console.firebase.google.com/) and put its ID in `.firebaserc` (currently `devtree-4594d`).
 2. Run `npx firebase-tools init hosting:github` from the repository root, or create a Google Cloud service account with the **Firebase Hosting Admin** role and download its JSON key.
 3. Add the JSON key as a repository secret named `FIREBASE_SERVICE_ACCOUNT` (Settings → Secrets and variables → Actions). If `init` offers to overwrite `firebase.json` or the workflow, keep the existing ones.
 
