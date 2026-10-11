@@ -120,6 +120,26 @@ cd tests/e2e && npx playwright test -c screenshots.config.js
 
 Until the secret exists, the workflow only checks the links and skips the deploy. To deploy by hand: `npx firebase-tools deploy --only hosting`.
 
+## Promo video
+
+`marketing/` is a [Remotion](https://www.remotion.dev) project that renders DevTree's 30-second promo from code, in 16:9 (`DevTreePromo`, 1920×1080) and square (`DevTreeSquare`, 1080×1080). It uses the docs screenshots in `site/img/`, so re-render after regenerating them and the video shows the current app.
+
+```sh
+cd marketing
+npm install
+npm run studio    # preview and edit in the browser
+npm run render    # out/devtree-promo.mp4 and out/devtree-promo-square.mp4
+npm run still     # out/devtree-promo-poster.png
+```
+
+The docs home page plays a compressed copy, `site/video/devtree-promo.mp4`:
+
+```sh
+ffmpeg -i marketing/out/devtree-promo.mp4 -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p -movflags +faststart -an site/video/devtree-promo.mp4
+```
+
+Or run **Actions → Promo video** to render both videos on GitHub and download them as an artifact. Remotion is free for individuals and companies of up to three people; larger companies need a [Remotion company license](https://www.remotion.pro/license).
+
 ## How it works
 
 - **Backend** (`src/`): [axum](https://github.com/tokio-rs/axum) runs the real `git` CLI, so pull and push use your existing SSH agent, credential helper and git config. No libgit2, no Electron.

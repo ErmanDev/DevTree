@@ -228,6 +228,14 @@ pre .p { color: var(--accent); user-select: none; }
   box-shadow: 8px 8px 0 var(--accent);
   background: var(--bg-2);
 }
+.demo .video {
+  border: 2px solid var(--shadow);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 8px 8px 0 var(--accent-2);
+  background: #0d1317;
+}
+.demo video { display: block; width: 100%; height: auto; }
 .shot .bar { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 2px solid var(--line); background: var(--panel); }
 .shot .bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
 .shot .bar i:nth-child(1) { background: var(--accent); }
