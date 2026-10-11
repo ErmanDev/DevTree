@@ -89,6 +89,16 @@ class Repo {
   }
 }
 
+/** Kills a child process and waits (up to 5 s) until it has actually exited. */
+function stopProcess(proc) {
+  return new Promise((resolve) => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+    const timer = setTimeout(resolve, 5000);
+    proc.once("exit", () => { clearTimeout(timer); resolve(); });
+    proc.kill();
+  });
+}
+
 /** Starts a DevTree server on a free port and waits until it is ready. */
 async function startServer(tmp, env) {
   const proc = spawn(BIN, ["--no-open", "--port", "0", "--data-dir", path.join(tmp, "data"), "--clone-dir", path.join(tmp, "clones")], { env });
@@ -108,7 +118,7 @@ async function startServer(tmp, env) {
     proc.on("error", (e) => reject(new Error(`cannot start ${BIN}: ${e.message}. Build it first with \`cargo build\`.`)));
     proc.on("exit", (code) => reject(new Error(`DevTree exited with ${code}:\n${output}`)));
   });
-  return { url, proc, stop: () => proc.kill() };
+  return { url, proc, stop: () => stopProcess(proc) };
 }
 
 /** Calls the DevTree API; returns { status, body }. */
@@ -130,8 +140,13 @@ const test = base.test.extend({
   tmp: async ({}, use) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devtree-e2e-"));
     await use(dir);
-    // Windows keeps files locked briefly after processes exit, so retry for a few seconds.
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    // Best effort: on Windows, antivirus / indexing can hold freshly written files for a
+    // while. A leftover temp folder is harmless and must not fail the test.
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    } catch (e) {
+      console.warn(`could not remove ${dir}: ${e.message}`);
+    }
   },
 
   env: async ({ tmp }, use) => {
@@ -143,7 +158,7 @@ const test = base.test.extend({
   server: async ({ tmp, env }, use) => {
     const srv = await startServer(tmp, env);
     await use(srv);
-    srv.stop();
+    await srv.stop();
   },
 
   api: async ({ server }, use) => {
@@ -193,4 +208,4 @@ async function toast(page, text) {
   await base.expect(page.locator(".toast", { hasText: text }).first()).toBeVisible();
 }
 
-module.exports = { test, expect: base.expect, Repo, gitEnv, menu, toast, ROOT, BIN };
+module.exports = { test, expect: base.expect, Repo, gitEnv, menu, toast, stopProcess, ROOT, BIN };

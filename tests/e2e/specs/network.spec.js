@@ -1,6 +1,6 @@
 // Remotes that need a password, live progress, cancel, the per-repo lock and auto-fetch.
 // Uses support/gitserver.py: a smart-HTTP git server that only accepts alice / s3cret.
-const { test: base, expect } = require("../support/fixtures");
+const { test: base, expect, stopProcess } = require("../support/fixtures");
 const { spawn, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -38,7 +38,7 @@ const test = base.extend({
       host: `localhost:${port}`,
       slow: (secs) => (secs ? fs.writeFileSync(slowFile, String(secs)) : fs.rmSync(slowFile, { force: true })),
     });
-    proc.kill();
+    await stopProcess(proc);
   },
 });
 
@@ -135,7 +135,9 @@ test("UI: cancel a pull; auto-fetch flags a missing sign-in without a dialog", a
   await api("POST", "/credentials", { host: gitServer.host, username: "alice", password: "s3cret", remember: true });
   const { body } = await api("POST", "/repos/clone", { url: gitServer.url });
   await page.goto(server.url);
-  await page.evaluate((id) => localStorage.setItem("devtree.repo", id), body.repo.id);
+  // Auto-fetch off for now: a fresh clone has never been fetched, so DevTree would start one
+  // right away and race the slowed-down server below.
+  await page.evaluate((id) => { localStorage.setItem("devtree.repo", id); localStorage.setItem("devtree.autoFetch", "0"); }, body.repo.id);
   await page.reload();
   await expect(page.locator("#repoName")).toHaveText("big");
 
@@ -148,7 +150,9 @@ test("UI: cancel a pull; auto-fetch flags a missing sign-in without a dialog", a
   gitServer.slow(null);
 
   await api("DELETE", "/credentials");
-  await page.evaluate(async () => { state.status.last_fetch = 1; state.lastAutoFetch = {}; await autoFetchTick(); });
+  // Auto-fetch skips while another network command runs, so wait for quiet first.
+  await page.waitForFunction(() => state.netBusy === 0);
+  await page.evaluate(async () => { state.autoFetch = 5; state.status.last_fetch = 1; state.lastAutoFetch = {}; await autoFetchTick(); });
   await expect(page.locator("#fetchInfo")).toContainText("sign-in needed");
   await expect(page.locator("#dialog")).toBeHidden();
 
