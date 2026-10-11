@@ -1,0 +1,3 @@
+# Every pull request requests a review from the maintainer.
+# With "Require review from Code Owners" in the main branch ruleset, nothing merges without it.
+*  @ErmanDev
