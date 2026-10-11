@@ -59,6 +59,29 @@ Options:
 | `--clone-dir <path>` | `~/devtree-repos` | default folder for clones |
 | `--no-open` | | don't open the browser on start |
 
+## Testing
+
+```sh
+cargo test                       # Rust unit tests
+cargo build                      # the end-to-end tests drive target/debug/devtree
+cd tests/e2e && npm install && npx playwright install chromium
+npm test                         # end-to-end tests
+```
+
+The end-to-end tests (`tests/e2e/specs`) give every test its own DevTree server on a free port, its own temporary git repositories and an isolated git config. They then drive the real UI in Chromium, or call the API directly. They cover:
+
+- the graph (including a 3,000-commit history)
+- staging, committing, discarding and stash
+- branches, remotes, cherry-pick, revert and reset
+- merge and rebase conflicts
+- partial staging and the diff viewer
+- history, blame, search and compare
+- interactive rebase
+- sign-in, progress and cancel, against a password-protected git server (`support/gitserver.py`, which needs Python)
+- the security guards
+
+GitHub Actions (`.github/workflows/ci.yml`) runs formatting, clippy, the unit tests and the end-to-end tests on Linux, macOS and Windows for every push and pull request.
+
 ## How it works
 
 - **Backend** (`src/`): [axum](https://github.com/tokio-rs/axum) runs the real `git` CLI, so pull and push use your existing SSH agent, credential helper and git config. No libgit2, no Electron.
