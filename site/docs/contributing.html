@@ -63,10 +63,11 @@
 <pre><code><span class="p">$ </span>git clone https://github.com/ErmanDev/DevTree.git
 <span class="p">$ </span>cd DevTree
 <span class="p">$ </span>cargo run -- --port 7979   <span class="c"># debug build, on another port</span></code></pre>
+      <p>On Linux you need the WebKitGTK and GTK development packages first (see the <a href="/docs/install#linux">install guide</a>), or work on a browser-only build with <code>cargo run --no-default-features</code>. Debug builds let you open the web inspector in the window (right-click → Inspect Element). You can also develop in a normal browser with <code>cargo run -- --browser</code>.</p>
       <p>The UI files in <code>web/</code> are compiled into the binary with <code>include_str!</code>, so rebuild (or re-run <code>cargo run</code>) after editing them.</p>
 
       <h2 id="architecture">Architecture</h2>
-      <p>The browser talks JSON to a local <a href="https://github.com/tokio-rs/axum">axum</a> server. The server runs the real <code>git</code> program for every operation and parses its machine-readable output. There is no libgit2 and no database.</p>
+      <p>The UI is a web page. It talks JSON to a local <a href="https://github.com/tokio-rs/axum">axum</a> server, and is shown in a native window drawn by the system's web engine (or in a browser tab). The server runs the real <code>git</code> program for every operation and parses its machine-readable output. There is no libgit2 and no database.</p>
 
       <h3 id="backend">Backend (<code>src/</code>)</h3>
       <table>
@@ -80,6 +81,7 @@
           <tr><td><code>explore.rs</code></td><td>File history, blame, search across history, compare.</td></tr>
           <tr><td><code>rebase.rs</code></td><td>Interactive rebase: the plan endpoint and the editor helper modes.</td></tr>
           <tr><td><code>net.rs</code></td><td>Network commands: progress jobs, cancel, the per-repository lock, in-memory credentials, and recognizing sign-in failures.</td></tr>
+          <tr><td><code>desktop.rs</code></td><td>The desktop window (<a href="https://github.com/tauri-apps/tao">tao</a> + <a href="https://github.com/tauri-apps/wry">wry</a>): WebView2, WKWebView or WebKitGTK showing the local page, and the macOS menu bar. Only built with the default <code>desktop</code> feature.</td></tr>
           <tr><td><code>store.rs</code></td><td>The imported-repository list (<code>repos.json</code>).</td></tr>
         </tbody>
       </table>
@@ -92,12 +94,12 @@
       </ul>
 
       <h3 id="graph-layout">Graph layout</h3>
-      <p>The server lays out the graph so the browser only draws it:</p>
+      <p>The server lays out the graph so the page only draws it:</p>
       <ul>
         <li>Commits arrive in topological order (children first). <code>graph.rs</code> keeps a list of <i>lanes</i>, each waiting for a particular commit.</li>
         <li>A commit takes the leftmost lane waiting for it. Other lanes waiting for it curve in, and lanes it isn't involved with pass straight through.</li>
         <li>Its first parent continues down the same column, and extra parents get new lanes.</li>
-        <li>Each row comes back with its column, color and line segments. Because lanes never move sideways, the browser can draw any window of rows on its own. That's what makes huge histories fast.</li>
+        <li>Each row comes back with its column, color and line segments. Because lanes never move sideways, the page can draw any window of rows on its own. That's what makes huge histories fast.</li>
       </ul>
 
       <h3 id="helpers">Helper modes</h3>
@@ -141,7 +143,7 @@
         <li>an isolated git config</li>
       </ul>
       <p>The tests then click through the real UI in Chromium, or call the API directly. The network tests run a small password-protected git server (<code>tests/e2e/support/gitserver.py</code>, which needs Python). Avatar services are faked, so nothing depends on the internet.</p>
-      <p>GitHub Actions runs formatting, clippy, the unit tests and the end-to-end tests on <b>Linux, macOS and Windows</b> for every push and pull request.</p>
+      <p>GitHub Actions runs formatting, clippy, the unit tests and the end-to-end tests on <b>Linux, macOS and Windows</b> for every push and pull request. On Linux it also opens the desktop window on a virtual display and checks that it draws the page (<code>scripts/desktop-smoke.sh</code>).</p>
 
       <h2 id="style">Code style</h2>
       <ul>

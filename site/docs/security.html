@@ -49,7 +49,7 @@
       <p class="lede">DevTree runs git commands on your computer on behalf of a web page. This page explains how it keeps that safe, and what it does and doesn't send anywhere.</p>
 
       <h2 id="model">The model</h2>
-      <p>DevTree is a local program with a web UI. The page in your browser asks the DevTree server, running on your machine, to run git. The server must therefore only ever take orders from <i>that</i> page:</p>
+      <p>DevTree is a local program with a web UI. Its window (or, with <code>--browser</code>, a browser tab) shows a page that asks the DevTree server, running on your machine, to run git. The server must therefore only ever take orders from <i>that</i> page:</p>
       <ul>
         <li>not from other computers on your network</li>
         <li>not from other websites open in your browser</li>
@@ -61,6 +61,7 @@
         <li><b>Loopback only.</b> The server listens on <code>127.0.0.1</code>, so other machines can't connect to it.</li>
         <li><b>Host check.</b> Requests whose <code>Host</code> isn't <code>localhost</code>, <code>127.0.0.1</code> or <code>[::1]</code> are refused. This blocks <i>DNS rebinding</i>, where a malicious site points its own domain name at your machine.</li>
         <li><b>A custom header on every API call.</b> The API rejects requests without an <code>X-DevTree</code> header. Browsers won't let another website add a custom header to a request to a different site without the server's permission (a CORS preflight), and DevTree never gives it. So a website you visit can't drive your git, even though it can reach <code>localhost</code>.</li>
+        <li><b>The window only shows DevTree.</b> The desktop window loads nothing but DevTree's own local pages. Web links open in your default browser, and links of any other kind (local files, custom schemes) are ignored, so a page can't make DevTree start another program.</li>
         <li><b>Sandboxed previews.</b> File contents served for image previews carry <code>Content-Security-Policy: sandbox</code> and <code>nosniff</code>, so an SVG in a repository can never run script in DevTree's page.</li>
       </ul>
 
@@ -91,7 +92,7 @@
       <h2 id="data">What DevTree stores</h2>
       <ul>
         <li><code>~/.devtree/repos.json</code> (or your <code>--data-dir</code>): the list of repositories you imported (name and path). Nothing else.</li>
-        <li>In your browser's local storage: UI preferences such as the theme, pull mode, auto-fetch interval, diff layout and the last opened repository.</li>
+        <li>UI preferences such as the theme, pull mode, auto-fetch interval, diff layout and the last opened repository, in the page's local storage: in <code>~/.devtree/webview</code> for the desktop window, or in your browser.</li>
         <li>During an interactive rebase, <code>.git/devtree-reword.json</code> in that repository holds your new commit messages. It is removed when the rebase ends.</li>
       </ul>
       <p>There is <b>no telemetry</b>, no analytics, no crash reporting and no account.</p>

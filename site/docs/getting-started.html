@@ -48,13 +48,13 @@
 
     <article class="article">
       <h1>Getting started</h1>
-      <p class="lede">Build DevTree, open it in your browser, and point it at a repository. It takes about a minute.</p>
+      <p class="lede">Build DevTree, open it, and point it at a repository. It takes about a minute.</p>
 
       <h2 id="requirements">Requirements</h2>
       <ul>
         <li><b>git</b> 2.30 or newer, on your <code>PATH</code>. DevTree runs your installed git, so your config, SSH keys and credential helper all apply.</li>
         <li><b>Rust</b>, to build from source: a recent stable toolchain (DevTree uses the 2024 edition). Install it with <a href="https://www.rust-lang.org/tools/install">rustup</a>.</li>
-        <li><b>A modern browser</b>: Chrome, Edge, Firefox or Safari.</li>
+        <li><b>Your system's web engine</b>, which draws the window: WebView2 on Windows 10 and 11 and WebKit on macOS come with the system. On Linux, install WebKitGTK (see the <a href="/docs/install#linux">install guide</a>).</li>
       </ul>
       <p>DevTree runs on Linux, macOS and Windows. All three are tested on every change.</p>
       <div class="note"><b>Prebuilt downloads</b>
@@ -69,18 +69,20 @@
 
       <h2 id="run">Run DevTree</h2>
 <pre><code><span class="p">$ </span>devtree
-<span class="c">🌳 DevTree running at http://localhost:7878  (Ctrl+C to stop)</span></code></pre>
-      <p>DevTree starts a small web server on your own machine and opens your browser. Only your computer can reach it: it listens on <code>127.0.0.1</code>. Leave the terminal open while you work, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop it.</p>
+<span class="c">🌳 DevTree running at http://localhost:7878  (close the window to quit)</span></code></pre>
+      <p>DevTree opens in its own window. Close the window to quit.</p>
+      <p>Behind the window, DevTree runs a small web server on your own machine, and the window shows its page. Only your computer can reach it: it listens on <code>127.0.0.1</code>. Prefer a browser tab? Start DevTree with <code>devtree --browser</code>, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> in the terminal to stop it.</p>
       <p>From a clone of the source you can also just run <code>cargo run --release</code>.</p>
 
       <h2 id="options">Command-line options</h2>
       <table>
         <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
         <tbody>
-          <tr><td><code>--port &lt;n&gt;</code></td><td><code>7878</code></td><td>Port to listen on (always on <code>127.0.0.1</code>). <code>0</code> picks any free port.</td></tr>
+          <tr><td><code>--port &lt;n&gt;</code></td><td><code>7878</code></td><td>Port to listen on (always on <code>127.0.0.1</code>). <code>0</code> picks any free port. Without this option, the window uses another free port if 7878 is taken.</td></tr>
           <tr><td><code>--data-dir &lt;path&gt;</code></td><td><code>~/.devtree</code></td><td>Where DevTree keeps its list of imported repositories. You can also set <code>DEVTREE_HOME</code>.</td></tr>
           <tr><td><code>--clone-dir &lt;path&gt;</code></td><td><code>~/devtree-repos</code></td><td>Default folder for repositories you clone from a URL.</td></tr>
-          <tr><td><code>--no-open</code></td><td></td><td>Don't open the browser on start.</td></tr>
+          <tr><td><code>--browser</code></td><td></td><td>Open DevTree in your web browser instead of its own window.</td></tr>
+          <tr><td><code>--no-open</code></td><td></td><td>Open nothing; just run the server. Visit <code>http://localhost:7878</code> yourself.</td></tr>
           <tr><td><code>--help</code></td><td></td><td>Show usage.</td></tr>
         </tbody>
       </table>
@@ -124,8 +126,8 @@
       <h2 id="troubleshooting">Troubleshooting</h2>
       <h4>"cannot listen on 127.0.0.1:7878: Address already in use"</h4>
       <p>Another DevTree (or another program) is using the port. Stop it, or start with <code>devtree --port 7979</code>.</p>
-      <h4>The browser doesn't open</h4>
-      <p>Open <code>http://localhost:7878</code> yourself. On Linux, DevTree uses <code>xdg-open</code>.</p>
+      <h4>The window doesn't open, or stays empty</h4>
+      <p>See the <a href="/docs/install#troubleshooting">install troubleshooting</a> for your system. You can always use <code>devtree --browser</code>, or <code>devtree --no-open</code> and open <code>http://localhost:7878</code> yourself.</p>
       <h4>"failed to start git"</h4>
       <p>git isn't on the <code>PATH</code> of the terminal you started DevTree from. Check with <code>git --version</code>.</p>
       <h4>Pull says "Not possible to fast-forward"</h4>

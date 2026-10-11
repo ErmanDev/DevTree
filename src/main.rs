@@ -1,5 +1,7 @@
 mod actions;
 mod api;
+#[cfg(feature = "desktop")]
+mod desktop;
 mod explore;
 mod git;
 mod graph;
@@ -33,9 +35,21 @@ const STYLE_CSS: &str = include_str!("../web/style.css");
 
 struct Config {
     port: u16,
+    /// `--port` was given: don't fall back to another port if it is taken.
+    port_set: bool,
     data_dir: PathBuf,
     clone_dir: PathBuf,
-    open: bool,
+    open: Open,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Open {
+    /// DevTree's own desktop window (the default when built with the `desktop` feature).
+    Window,
+    /// A tab in the default web browser.
+    Browser,
+    /// Nothing: just serve (`--no-open`).
+    Nothing,
 }
 
 fn home() -> PathBuf {
@@ -50,15 +64,20 @@ fn parse_args() -> Config {
         port: 7878,
         data_dir: std::env::var_os("DEVTREE_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".devtree")),
         clone_dir: home().join("devtree-repos"),
-        open: true,
+        open: if cfg!(feature = "desktop") { Open::Window } else { Open::Browser },
+        port_set: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
-            "-p" | "--port" => cfg.port = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage("--port needs a number")),
+            "-p" | "--port" => {
+                cfg.port = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage("--port needs a number"));
+                cfg.port_set = true;
+            }
             "--data-dir" => cfg.data_dir = args.next().map(PathBuf::from).unwrap_or_else(|| usage("--data-dir needs a path")),
             "--clone-dir" => cfg.clone_dir = args.next().map(PathBuf::from).unwrap_or_else(|| usage("--clone-dir needs a path")),
-            "--no-open" => cfg.open = false,
+            "--browser" => cfg.open = Open::Browser,
+            "--no-open" => cfg.open = Open::Nothing,
             "-h" | "--help" => usage(""),
             other => usage(&format!("unknown argument: {other}")),
         }
@@ -72,7 +91,8 @@ fn usage(err: &str) -> ! {
     }
     eprintln!(
         "DevTree – a lightweight local git client\n\n\
-         USAGE: devtree [--port 7878 (0 = any free port)] [--data-dir ~/.devtree] [--clone-dir ~/devtree-repos] [--no-open]"
+         USAGE: devtree [--port 7878 (0 = any free port)] [--data-dir ~/.devtree] [--clone-dir ~/devtree-repos]\n\
+         \x20              [--browser (open in your web browser instead of a window) | --no-open (just serve)]"
     );
     std::process::exit(if err.is_empty() { 0 } else { 2 });
 }
@@ -102,14 +122,61 @@ fn main() {
     if let Ok(exe) = std::env::current_exe() {
         git::set_self_exe(&exe);
     }
+    let cfg = parse_args();
+    #[cfg(feature = "desktop")]
+    if cfg.open == Open::Window {
+        desktop::prepare();
+    }
     let runtime = tokio::runtime::Runtime::new().expect("failed to start the async runtime");
-    runtime.block_on(serve(parse_args()));
+    let listener = runtime.block_on(listen(&cfg));
+    // With --port 0 the OS picks a free port; report the real one (tests rely on this line).
+    let port = listener.local_addr().map(|a| a.port()).unwrap_or(cfg.port);
+    let url = format!("http://localhost:{port}");
+    let app = app(&cfg);
+    match cfg.open {
+        #[cfg(feature = "desktop")]
+        Open::Window => {
+            println!("🌳 DevTree running at {url}  (close the window to quit)");
+            runtime.spawn(async { axum::serve(listener, app).await.expect("server error") });
+            // The window must own the main thread (macOS requires it); the server runs on the runtime.
+            desktop::run(&url, &cfg.data_dir);
+        }
+        open => {
+            println!("🌳 DevTree running at {url}  (Ctrl+C to stop)");
+            if open != Open::Nothing {
+                open_browser(&url);
+            }
+            runtime.block_on(async { axum::serve(listener, app).await.expect("server error") });
+        }
+    }
 }
 
-async fn serve(cfg: Config) {
+/// Loopback only: this server can run git commands on your machine.
+async fn listen(cfg: &Config) -> tokio::net::TcpListener {
+    let addr = SocketAddr::from(([127, 0, 0, 1], cfg.port));
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        // A window doesn't need a well-known address: if another program has the port, use any.
+        Err(e) if cfg.open == Open::Window && !cfg.port_set && e.kind() == std::io::ErrorKind::AddrInUse => {
+            match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("cannot listen on 127.0.0.1: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("cannot listen on {addr}: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn app(cfg: &Config) -> Router {
     let state = Arc::new(AppState {
         store: Store::load(&cfg.data_dir),
-        clone_dir: cfg.clone_dir,
+        clone_dir: cfg.clone_dir.clone(),
         net: net::Net::new(),
     });
 
@@ -169,32 +236,14 @@ async fn serve(cfg: Config) {
         .route("/fs", get(browse))
         .layer(middleware::from_fn(require_api_header));
 
-    let app = Router::new()
+    Router::new()
         .route("/", get(|| async { asset(INDEX_HTML, "text/html; charset=utf-8") }))
         .route("/app.js", get(|| async { asset(APP_JS, "text/javascript; charset=utf-8") }))
         .route("/diff.js", get(|| async { asset(DIFF_JS, "text/javascript; charset=utf-8") }))
         .route("/style.css", get(|| async { asset(STYLE_CSS, "text/css; charset=utf-8") }))
         .nest("/api", api)
         .layer(middleware::from_fn(require_local_host))
-        .with_state(state);
-
-    // Loopback only: this server can run git commands on your machine.
-    let addr = SocketAddr::from(([127, 0, 0, 1], cfg.port));
-    let listener = match tokio::net::TcpListener::bind(addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("cannot listen on {addr}: {e}");
-            std::process::exit(1);
-        }
-    };
-    // With --port 0 the OS picks a free port; report the real one (tests rely on this line).
-    let port = listener.local_addr().map(|a| a.port()).unwrap_or(cfg.port);
-    let url = format!("http://localhost:{port}");
-    println!("🌳 DevTree running at {url}  (Ctrl+C to stop)");
-    if cfg.open {
-        open_browser(&url);
-    }
-    axum::serve(listener, app).await.expect("server error");
+        .with_state(state)
 }
 
 fn asset(body: &'static str, ty: &'static str) -> Response {
@@ -208,20 +257,24 @@ fn asset(body: &'static str, ty: &'static str) -> Response {
         .into_response()
 }
 
+/// Opens `url` in the default browser. Not through `cmd /C start` on Windows: cmd would
+/// treat characters like `&` in the URL as commands.
 fn open_browser(url: &str) {
     let cmd: &[&str] = if cfg!(target_os = "macos") {
         &["open"]
     } else if cfg!(windows) {
-        &["cmd", "/C", "start", ""]
+        &["rundll32", "url.dll,FileProtocolHandler"]
     } else {
         &["xdg-open"]
     };
-    let _ = std::process::Command::new(cmd[0])
+    let mut command = std::process::Command::new(cmd[0]);
+    command
         .args(&cmd[1..])
         .arg(url)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+        .stderr(std::process::Stdio::null());
+    git::hide_console_std(&mut command);
+    let _ = command.spawn();
 }
 
 // ---------------------------------------------------------------- request guards

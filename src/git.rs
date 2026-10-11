@@ -75,8 +75,27 @@ pub struct Extra {
     pub stdin: Option<Vec<u8>>,
 }
 
+/// Windows: start console programs (git, taskkill) without a console window of their own.
+/// The desktop app has no console, so each git call would otherwise flash one open.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn hide_console(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+pub fn hide_console_std(cmd: &mut std::process::Command) {
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(cmd, CREATE_NO_WINDOW);
+    #[cfg(not(windows))]
+    let _ = cmd;
+}
+
 pub async fn run_with(dir: &Path, args: &[&str], timeout: Duration, extra: &Extra) -> Result<GitOutput, String> {
     let mut cmd = Command::new("git");
+    hide_console(&mut cmd);
     cmd.arg("-C").arg(dir).args(["-c", "color.ui=false", "-c", "core.quotepath=false"]);
     for c in &extra.config {
         cmd.arg("-c").arg(c);
@@ -189,7 +208,7 @@ async fn kill_tree(child: &mut tokio::process::Child) {
         #[cfg(unix)]
         let killer = Command::new("kill").args(["-KILL", &format!("-{pid}")]).status();
         #[cfg(windows)]
-        let killer = Command::new("taskkill")
+        let killer = hide_console(&mut Command::new("taskkill"))
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -895,7 +914,7 @@ pub async fn worktree_diff(dir: &Path, path: &str, staged: bool, untracked: bool
 
 /// Raw bytes of a file at a revision spec such as `HEAD:src/a.png` or `:src/a.png` (index).
 pub async fn blob(dir: &Path, spec: &str) -> Result<Option<Vec<u8>>, String> {
-    let out = Command::new("git")
+    let out = hide_console(&mut Command::new("git"))
         .arg("-C")
         .arg(dir)
         .args(["cat-file", "blob", spec])

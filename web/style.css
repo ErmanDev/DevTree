@@ -820,3 +820,25 @@ h3 .warn { color: var(--del); }
   .sidebar { max-height: 30vh; border-right: 0; border-bottom: 2px solid var(--line); }
   .detail { border-left: 0; border-top: 2px solid var(--line); }
 }
+
+/* Draw drop-downs ourselves. WebKitGTK (the Linux desktop window) otherwise paints them with
+   the GTK theme, ignoring the colors above. The arrow is two gradient triangles. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  font: 12px var(--font);
+  color: var(--text);
+  background-color: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 3px 4px;
+}
+select, .search-mode, .rb-list select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 10px) 55%, calc(100% - 6px) 55%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  padding-right: 20px;
+}
+select:focus { border-color: var(--accent); outline: none; }
+.dialog-body select { font: inherit; padding: 6px 22px 6px 8px; }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Install · DevTree</title>
-  <meta name="description" content="Install DevTree on macOS, Linux or Windows: set up git and Rust, build from source, and run it. Includes updating, uninstalling and troubleshooting.">
+  <meta name="description" content="Install DevTree on macOS, Linux or Windows: set up git and Rust, build from source, and open it as a desktop app. Includes updating, uninstalling and troubleshooting.">
   <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
       <p class="lede">Step-by-step setup for macOS, Linux and Windows. You install git and Rust, then build DevTree from source with one command.</p>
 
       <div class="note"><b>Why build from source?</b>
-        <p>Ready-made downloads aren't published yet. Building takes a few minutes the first time. You get a single <code>devtree</code> program of about 2.5&nbsp;MB, with the web UI built in.</p>
+        <p>Ready-made downloads aren't published yet. Building takes a few minutes the first time. You get a single <code>devtree</code> program of about 3&nbsp;MB that opens in its own window. It draws with the web engine your system already has, so there is no bundled browser.</p>
       </div>
 
       <h2 id="choose">Choose your system</h2>
@@ -80,26 +80,24 @@
 
         <h3>4. Run it</h3>
 <pre><code><span class="p">$ </span>devtree</code></pre>
-        <p>Your default browser opens at <code>http://localhost:7878</code>. Keep the terminal open while you use DevTree, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> in it to stop.</p>
+        <p>The DevTree window opens. Close it (or press <kbd>⌘</kbd>+<kbd>Q</kbd>) to quit. DevTree uses macOS's built-in WebKit, so there's nothing else to install.</p>
       </section>
 
       <section class="os-panel" id="linux" data-os="linux" role="tabpanel">
         <h2>Linux</h2>
         <p>Any recent 64-bit distribution works, on x86-64 or ARM.</p>
 
-        <h3>1. Install git, curl and a C compiler</h3>
-        <p>Rust uses your system's C compiler to link programs. Pick your distribution:</p>
+        <h3>1. Install git, a C compiler and WebKitGTK</h3>
+        <p>Rust uses your system's C compiler to link programs, and DevTree's window is drawn by WebKitGTK. Pick your distribution:</p>
 <pre><code><span class="c"># Debian, Ubuntu, Mint, Pop!_OS</span>
-<span class="p">$ </span>sudo apt update &amp;&amp; sudo apt install -y git curl build-essential
+<span class="p">$ </span>sudo apt update &amp;&amp; sudo apt install -y git curl build-essential libwebkit2gtk-4.1-dev libgtk-3-dev
 
 <span class="c"># Fedora, RHEL, Rocky</span>
-<span class="p">$ </span>sudo dnf install -y git curl gcc
+<span class="p">$ </span>sudo dnf install -y git curl gcc webkit2gtk4.1-devel gtk3-devel
 
 <span class="c"># Arch, Manjaro</span>
-<span class="p">$ </span>sudo pacman -S --needed git curl base-devel
-
-<span class="c"># openSUSE</span>
-<span class="p">$ </span>sudo zypper install -y git curl gcc</code></pre>
+<span class="p">$ </span>sudo pacman -S --needed git curl base-devel webkit2gtk-4.1 gtk3</code></pre>
+        <p>On other distributions, install git, curl, a C compiler, and the development packages for <b>WebKitGTK 4.1</b> and <b>GTK 3</b>.</p>
 
         <h3>2. Install Rust</h3>
 <pre><code><span class="p">$ </span>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -116,10 +114,13 @@
 
         <h3>4. Run it</h3>
 <pre><code><span class="p">$ </span>devtree</code></pre>
-        <p>DevTree opens your browser with <code>xdg-open</code>. On a machine without a desktop, run <code>devtree --no-open</code> and open <code>http://localhost:7878</code> yourself.</p>
+        <p>The DevTree window opens. Close it to quit.</p>
+        <div class="tip"><b>No desktop, or no WebKitGTK?</b>
+          <p>Build a browser-only DevTree with <code>cargo install --path . --no-default-features</code>. It doesn't need the WebKitGTK and GTK packages, and opens in your web browser instead. Any DevTree can also be started with <code>devtree --browser</code>.</p>
+        </div>
 
         <h3 id="wsl">Windows Subsystem for Linux (WSL)</h3>
-        <p>The Linux steps work the same inside WSL&nbsp;2. Start DevTree with <code>devtree --no-open</code>, then open <code>http://localhost:7878</code> in your Windows browser. WSL forwards <code>localhost</code> to Windows.</p>
+        <p>The Linux steps work the same inside WSL&nbsp;2. On Windows 11, the DevTree window appears on your Windows desktop. Otherwise, start it with <code>devtree --no-open</code> and open <code>http://localhost:7878</code> in your Windows browser. WSL forwards <code>localhost</code> to Windows.</p>
         <p>Use WSL for repositories stored inside WSL (under <code>~</code>). For repositories on your Windows drive (<code>/mnt/c/…</code>), git is much faster if you <a href="#windows">install DevTree on Windows</a> instead.</p>
       </section>
 
@@ -151,7 +152,8 @@
 
         <h3>4. Run it</h3>
 <pre><code><span class="p">PS&gt; </span>devtree</code></pre>
-        <p>Your default browser opens at <code>http://localhost:7878</code>. Keep the terminal open while you use DevTree, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> in it to stop. If Windows Defender Firewall asks about DevTree, you can click <b>Cancel</b>: DevTree only accepts connections from your own computer.</p>
+        <p>The DevTree window opens. Close it to quit. You can also pin it to the taskbar, or start <code>devtree.exe</code> from File Explorer.</p>
+        <p>The window is drawn by <b>Microsoft Edge WebView2</b>, which comes with Windows 10 and 11. If DevTree says it's missing, install the <a href="https://developer.microsoft.com/microsoft-edge/webview2/">WebView2 Runtime</a> (the "Evergreen" version). If Windows Defender Firewall asks about DevTree, you can click <b>Cancel</b>: DevTree only accepts connections from your own computer.</p>
       </section>
 
       <h2 id="check">Check it works</h2>
@@ -165,11 +167,11 @@
       <p>Stop DevTree first (<kbd>Ctrl</kbd>+<kbd>C</kbd>), then in your DevTree folder:</p>
 <pre><code><span class="p">$ </span>git pull
 <span class="p">$ </span>cargo install --path . --force</code></pre>
-      <p>Your list of imported repositories is kept.</p>
+      <p>Your list of imported repositories and your settings are kept.</p>
 
       <h2 id="uninstall">Uninstalling</h2>
 <pre><code><span class="p">$ </span>cargo uninstall devtree</code></pre>
-      <p>Then delete DevTree's data folder, which only holds your list of imported repositories: <code>~/.devtree</code> on macOS and Linux, <code>%USERPROFILE%\.devtree</code> on Windows. Your repositories themselves are never touched. If you installed Rust only for DevTree, <code>rustup self uninstall</code> removes it too.</p>
+      <p>Then delete DevTree's data folder, which only holds your list of imported repositories and the window's settings: <code>~/.devtree</code> on macOS and Linux, <code>%USERPROFILE%\.devtree</code> on Windows. Your repositories themselves are never touched. If you installed Rust only for DevTree, <code>rustup self uninstall</code> removes it too.</p>
 
       <h2 id="troubleshooting">Troubleshooting</h2>
       <h4>"command not found: devtree" / "devtree is not recognized"</h4>
@@ -180,6 +182,10 @@
       <p>The Visual Studio C++ build tools are missing. Run the <code>Microsoft.VisualStudio.2022.BuildTools</code> command from step 2 of the <a href="#windows">Windows</a> instructions, or add the <b>Desktop development with C++</b> workload in the Visual Studio Installer.</p>
       <h4>"xcrun: error: invalid active developer path" (macOS)</h4>
       <p>A macOS update removed the Command Line Tools. Run <code>xcode-select --install</code> again.</p>
+      <h4>"The system library `webkit2gtk-4.1` required by crate … was not found" (Linux)</h4>
+      <p>The WebKitGTK development package is missing. Install it with step 1 of the <a href="#linux">Linux</a> instructions, or build the browser-only version with <code>--no-default-features</code>.</p>
+      <h4>The window opens but stays empty (Linux)</h4>
+      <p>DevTree already turns off WebKitGTK's DMA-BUF renderer, the usual cause. If it still happens, try <code>WEBKIT_DISABLE_COMPOSITING_MODE=1 devtree</code>, or use <code>devtree --browser</code>.</p>
       <h4>"feature `edition2024` is required"</h4>
       <p>Your Rust is too old. If you installed it with rustup, run <code>rustup update</code>. If it came from your Linux distribution, remove that package and install Rust with rustup.</p>
       <h4>"Access is denied" while updating (Windows)</h4>

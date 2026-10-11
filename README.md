@@ -2,7 +2,7 @@
 
 A lightweight, local, GitKraken-style git client written in Rust, with a retro terminal UI in Claude's warm palette.
 
-It runs as one small binary (~1.6 MB release build) that serves a web UI on `http://localhost:7878`.
+It runs as one small desktop program (~3 MB release build). The UI is drawn by your system's own web engine (WebView2, WKWebView or WebKitGTK), so there's no Electron and no bundled browser. It can also run in your web browser.
 
 ## Features
 
@@ -47,7 +47,7 @@ It runs as one small binary (~1.6 MB release build) that serves a web UI on `htt
 
 ## Run it
 
-Requires Rust and `git` on your `PATH`.
+Requires Rust and `git` on your `PATH`. On Linux, also install the WebKitGTK and GTK development packages, e.g. `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev` (or build the browser-only version with `--no-default-features`). Step-by-step setup for each system is in the [install guide](site/docs/install.html).
 
 ```sh
 cargo run --release
@@ -62,7 +62,8 @@ Options:
 | `--port <n>` | `7878` | port to listen on (always `127.0.0.1`) |
 | `--data-dir <path>` | `~/.devtree` (or `$DEVTREE_HOME`) | where the list of imported repos is stored |
 | `--clone-dir <path>` | `~/devtree-repos` | default folder for clones |
-| `--no-open` | | don't open the browser on start |
+| `--browser` | | open in your web browser instead of DevTree's own window |
+| `--no-open` | | open nothing, just serve `http://localhost:7878` |
 
 ## Testing
 
@@ -85,7 +86,7 @@ The end-to-end tests (`tests/e2e/specs`) give every test its own DevTree server 
 - sign-in, progress and cancel, against a password-protected git server (`support/gitserver.py`, which needs Python)
 - the security guards
 
-GitHub Actions (`.github/workflows/ci.yml`) runs formatting, clippy, the unit tests and the end-to-end tests on Linux, macOS and Windows for every push and pull request.
+GitHub Actions (`.github/workflows/ci.yml`) runs formatting, clippy, the unit tests and the end-to-end tests on Linux, macOS and Windows for every push and pull request. On Linux it also opens the desktop window on a virtual display and checks that it draws (`scripts/desktop-smoke.sh`).
 
 ## Documentation site
 
@@ -121,8 +122,9 @@ Until the secret exists, the workflow only checks the links and skips the deploy
   - `net.rs`: progress jobs, cancel, the per-repo network lock, credentials and sign-in failure detection.
   - `explore.rs`: file history, blame, search and compare.
   - `rebase.rs`: interactive rebase. DevTree acts as git's plan and message editor.
-  - `graph.rs`: lays out the lanes server-side, so the browser only draws them.
+  - `graph.rs`: lays out the lanes server-side, so the UI only draws them.
   - `store.rs`: the imported-repo list (`repos.json`).
+  - `desktop.rs`: the native window ([tao](https://github.com/tauri-apps/tao) + [wry](https://github.com/tauri-apps/wry)), behind the default `desktop` feature.
 - **Frontend** (`web/`): plain HTML, CSS and JS with no dependencies. The graph is drawn in SVG. `diff.js` holds the diff parser and renderer, the syntax highlighter and the partial-staging patch builder. The files are compiled into the binary with `include_str!`.
 
 ## Security
