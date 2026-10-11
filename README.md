@@ -184,6 +184,10 @@ DevTree can run git commands on your machine, so it:
 
 Git never prompts in a terminal (`GIT_TERMINAL_PROMPT=0`). Credentials typed into DevTree reach git through DevTree acting as a git credential helper (`devtree credential-helper get`). The secret travels in that one child process's environment, never on a command line or disk.
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for how changes get reviewed and merged, and [SECURITY.md](SECURITY.md) to report a vulnerability privately.
+
 ## License
 
 [MIT](LICENSE). Contributions are accepted under the same license.
