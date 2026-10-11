@@ -1,6 +1,6 @@
 [package]
 name = "devtree"
-version = "0.1.0"
+version = "0.1.1"
 description = "A fast, lightweight desktop git client with a visual commit graph and a retro terminal look"
 edition = "2024"
 license = "MIT"
