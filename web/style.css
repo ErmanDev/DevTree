@@ -305,6 +305,37 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .row.on-path .subject { color: var(--text); }
 .graph-scroll:has(.on-path) .row:not(.on-path):not(.selected) .subject { opacity: .55; }
 
+/* ---------------------------------------------------------------- author chips */
+
+.av {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: var(--c);
+  color: #1c1a17;
+  font: 700 calc(var(--s) * .42)/1 var(--font);
+  overflow: hidden;
+  vertical-align: middle;
+  box-shadow: 0 0 0 1.5px var(--bg-2);
+}
+.av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--bg); }
+.author-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; vertical-align: middle; }
+.author-chip .an { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.committed-by { color: var(--accent-2); font-size: 11px; cursor: help; }
+.row .col-author { display: flex; align-items: center; }
+.graph-head .col-author { display: flex; align-items: center; gap: 6px; }
+.avatar-toggle { font-size: 12px; line-height: 14px; }
+.avatar-toggle.on { color: var(--accent); border-color: var(--accent); }
+.kv dd.person { display: flex; flex-direction: column; gap: 2px; overflow: visible; }
+.kv dd.person .author-chip { color: var(--text); font-size: 13px; }
+.kv dd.person .mail { color: var(--faint); font-size: 11px; padding-left: 32px; overflow: hidden; text-overflow: ellipsis; }
+.kv { align-items: center; }
+.h-meta .av { margin: 0 2px; }
+
 /* ---------------------------------------------------------------- detail panel */
 
 .detail {

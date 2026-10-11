@@ -10,6 +10,11 @@ It runs as one small binary (~1.6 MB release build) that serves a web UI on `htt
   - Only the rows on screen are drawn, so a 30,000-commit history scrolls smoothly. Older commits load as you scroll down.
   - Hovering a commit highlights its line of history (its first-parent path).
 - **WIP row**: uncommitted changes appear at the top of the graph, like GitKraken.
+- **Author chips**: every commit shows its author's picture and name, both in the graph node and in the AUTHOR column. The commit details show author and committer.
+  - **Where pictures come from:** GitHub `noreply` emails use the GitHub avatar; other emails use Gravatar, looked up by a SHA-256 hash of the email.
+  - **When there's no picture,** or you're offline, colored initials are shown instead.
+  - **↻ marks commits where someone else committed** (for example rebased, cherry-picked, or merged on GitHub). Git doesn't record who *pushed*.
+  - **The ☺ button in the AUTHOR header turns pictures off.** Then nothing is fetched.
 - **Pull / Push / Fetch** buttons. Pull has a mode menu (fast-forward if possible, ff-only, rebase) and auto-stashes local changes. Push sets the upstream automatically for new branches.
 - **Live progress with Cancel** for fetch, pull, push, clone and tag/remote-branch pushes. A retro progress bar shows git's own progress ("Receiving objects: 45%"). Cancel stops git immediately, and a cancelled clone leaves no half-written folder. Network commands on one repository run one at a time, so a background fetch never collides with your pull.
 - **Sign in to HTTPS remotes**: when a server asks for credentials, DevTree asks for a username and password/token, then retries. Credentials are kept in memory only (for one operation, or until DevTree closes). If you have a git credential manager, it saves them as usual. SSH failures get a short guide instead (load your key with `ssh-add`, accept the host key). ssh is run in batch mode, so it fails instead of hanging on a prompt nobody can see.

@@ -159,6 +159,7 @@ mod tests {
             time: 0,
             subject: String::new(),
             refs: Vec::new(),
+            committer: None,
         }
     }
 

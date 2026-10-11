@@ -233,6 +233,10 @@ pub struct Commit {
     pub time: i64,
     pub subject: String,
     pub refs: Vec<RefLabel>,
+    /// Who committed it, as "Name <email>", only when that differs from the author
+    /// (e.g. rebased, cherry-picked or merged through a web UI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub committer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -261,7 +265,7 @@ pub async fn log(dir: &Path, limit: usize) -> Result<Vec<Commit>, String> {
     Ok(parse_log(&out.stdout))
 }
 
-const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1e";
+const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1f%cn%x1f%ce%x1e";
 
 /// `git log` with extra arguments (filters, ranges), parsed into commits.
 pub async fn log_query(dir: &Path, args: &[&str], timeout: Duration) -> Result<Vec<Commit>, String> {
@@ -428,6 +432,11 @@ fn parse_log(text: &str) -> Vec<Commit> {
                 time: f[4].parse().unwrap_or(0),
                 subject: f[5].to_string(),
                 refs: parse_decorations(f[6]),
+                // Committer fields are optional so formats without them still parse.
+                committer: match (f.get(7), f.get(8)) {
+                    (Some(name), Some(mail)) if (*name, *mail) != (f[2], f[3]) => Some(format!("{name} <{mail}>")),
+                    _ => None,
+                },
             })
         })
         .collect()
@@ -767,6 +776,7 @@ pub struct CommitDetail {
     pub email: String,
     pub author_time: i64,
     pub committer: String,
+    pub committer_email: String,
     pub commit_time: i64,
     pub message: String,
     pub files: Vec<ChangedFile>,
@@ -780,9 +790,13 @@ pub struct ChangedFile {
 }
 
 pub async fn commit_detail(dir: &Path, sha: &str) -> Result<CommitDetail, String> {
-    let text = run_ok(dir, &["show", "-s", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%B", sha, "--"]).await?;
-    let f: Vec<&str> = text.splitn(8, FIELD).collect();
-    if f.len() < 8 {
+    let text = run_ok(
+        dir,
+        &["show", "-s", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ce%x1f%ct%x1f%B", sha, "--"],
+    )
+    .await?;
+    let f: Vec<&str> = text.splitn(9, FIELD).collect();
+    if f.len() < 9 {
         return Err("unexpected git show output".into());
     }
     let parents: Vec<String> = f[1].split_whitespace().map(str::to_string).collect();
@@ -797,8 +811,9 @@ pub async fn commit_detail(dir: &Path, sha: &str) -> Result<CommitDetail, String
         email: f[3].to_string(),
         author_time: f[4].parse().unwrap_or(0),
         committer: f[5].to_string(),
-        commit_time: f[6].parse().unwrap_or(0),
-        message: f[7].trim_end().to_string(),
+        committer_email: f[6].to_string(),
+        commit_time: f[7].parse().unwrap_or(0),
+        message: f[8].trim_end().to_string(),
         files: parse_name_status(&names),
     })
 }
@@ -920,6 +935,18 @@ mod tests {
         assert_eq!(st.files[1].path, "new name.rs");
         assert_eq!(st.files[1].orig_path.as_deref(), Some("old.rs"));
         assert!(st.files[2].untracked);
+    }
+
+    #[test]
+    fn committer_only_when_different() {
+        let rec = |cn: &str, ce: &str| format!("abc\u{1f}\u{1f}Ada\u{1f}ada@x\u{1f}1\u{1f}msg\u{1f}\u{1f}{cn}\u{1f}{ce}\u{1e}");
+        assert_eq!(parse_log(&rec("Ada", "ada@x"))[0].committer, None);
+        assert_eq!(
+            parse_log(&rec("GitHub", "noreply@github.com"))[0].committer.as_deref(),
+            Some("GitHub <noreply@github.com>")
+        );
+        // Older format without committer fields still parses.
+        assert_eq!(parse_log("abc\u{1f}\u{1f}Ada\u{1f}ada@x\u{1f}1\u{1f}msg\u{1f}\u{1e}")[0].committer, None);
     }
 
     #[test]

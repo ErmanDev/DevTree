@@ -2,10 +2,10 @@
 
 // ---------------------------------------------------------------- constants & state
 
-const LANE_W = 20;
+const LANE_W = 22;
 const GRAPH_PAD = 14;
 const ROW_H = 30;
-const NODE_R = 7;
+const NODE_R = 9;
 const MAX_GRAPH_W = 420;
 const PAGE = 1000;
 // Warm retro lane colours, led by Claude orange.
@@ -37,6 +37,7 @@ const state = {
   compare: null,       // { from, to, fromSha, toSha } while comparing
   diffSplit: false,    // side-by-side diffs
   ignoreWs: false,     // hide whitespace-only changes
+  showAvatars: true,   // author pictures from GitHub / Gravatar
   netBusy: 0,          // network commands in flight
   autoFetch: 5,        // minutes between background fetches; 0 = off
   lastAutoFetch: {},   // repo id -> unix time of the last auto-fetch attempt
@@ -391,6 +392,80 @@ function nameFor(sha) {
 const currentBranch = () => state.status?.branch || null;
 const conflictCount = () => (state.status?.files || []).filter((f) => f.conflicted).length;
 
+// ---------------------------------------------------------------- author avatars
+
+/**
+ * Author pictures. GitHub "noreply" addresses map straight to the GitHub avatar; other
+ * addresses use Gravatar (by SHA-256 of the email, d=404 so missing pictures fall back to
+ * initials). Nothing is fetched when avatars are switched off.
+ */
+const avatarHashes = new Map(); // lower-cased email -> sha256 hex
+
+function avatarUrl(email) {
+  if (!state.showAvatars || !email) return null;
+  const e = email.trim().toLowerCase();
+  const gh = e.match(/^(?:(\d+)\+)?([^@+]+)@users\.noreply\.github\.com$/);
+  if (gh) return gh[1] ? `https://avatars.githubusercontent.com/u/${gh[1]}?s=64&v=4` : `https://github.com/${encodeURIComponent(gh[2])}.png?size=64`;
+  const hash = avatarHashes.get(e);
+  return hash ? `https://www.gravatar.com/avatar/${hash}?s=64&d=404` : null;
+}
+
+/** Hashes any new emails (async, WebCrypto), then redraws so pictures appear. */
+async function loadAvatarHashes(emails) {
+  if (!state.showAvatars || !window.crypto || !crypto.subtle) return;
+  const todo = [...new Set(emails.map((e) => (e || "").trim().toLowerCase()))].filter((e) => e && !avatarHashes.has(e) && !e.endsWith("@users.noreply.github.com"));
+  if (!todo.length) return;
+  await Promise.all(todo.map(async (e) => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e));
+    avatarHashes.set(e, [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join(""));
+  }));
+  renderWindow(true);
+}
+
+/**
+ * Whether a picture has loaded. The graph is SVG, where a missing image would show a
+ * broken-image icon, so nodes only use pictures that are known to exist.
+ */
+const avatarStatus = new Map(); // url -> "loading" | "ok" | "missing"
+function avatarLoaded(url) {
+  if (!url) return false;
+  if (!avatarStatus.has(url)) {
+    avatarStatus.set(url, "loading");
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => {
+      avatarStatus.set(url, "ok");
+      if (!state.avatarRedraw) {
+        state.avatarRedraw = true;
+        requestAnimationFrame(() => { state.avatarRedraw = false; renderWindow(true); });
+      }
+    };
+    img.onerror = () => avatarStatus.set(url, "missing");
+    img.src = url;
+  }
+  return avatarStatus.get(url) === "ok";
+}
+
+/** A stable colour per person for initials. */
+function personColor(key) {
+  let h = 0;
+  for (const ch of String(key || "").toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return LANES[h % LANES.length];
+}
+
+/** Round picture with initials underneath (shown when there is no picture). */
+function avatarHtml(name, email, size = 18) {
+  const url = avatarUrl(email);
+  return `<span class="av" style="--c:${personColor(email || name)};--s:${size}px" aria-hidden="true"><span class="av-i">${esc(initials(name))}</span>${
+    url ? `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</span>`;
+}
+
+/** Avatar + name; marks commits whose committer differs from the author. */
+function authorChip(name, email, committer = null, size = 18) {
+  const by = committer ? `<span class="committed-by" title="committed by ${esc(committer)}">↻</span>` : "";
+  return `<span class="author-chip" title="${esc(name)} <${esc(email)}>${committer ? `\ncommitted by ${esc(committer)}` : ""}">${avatarHtml(name, email, size)}<span class="an">${esc(name)}</span>${by}</span>`;
+}
+
 // ---------------------------------------------------------------- repositories
 
 async function loadRepos() {
@@ -491,6 +566,7 @@ async function reload() {
   ]);
   if (!state.repo || state.repo.id !== id) return; // switched repo meanwhile
   state.rows = graph.rows;
+  loadAvatarHashes(graph.rows.map((r) => r.email));
   state.width = graph.width;
   state.truncated = graph.truncated;
   state.branches = refs.branches;
@@ -689,7 +765,7 @@ function rowHtml(r) {
   return `<div class="row${isSelectedRow(r.sha) ? " selected" : ""}${match ? "" : " dim"}${onPath ? " on-path" : ""}" data-sha="${r.sha}">
       <div class="col-graph"></div>
       <div class="col-msg">${refs}<span class="subject" title="${esc(r.subject)}">${esc(r.subject)}</span></div>
-      <div class="col-author" title="${esc(r.author)} <${esc(r.email)}>">${esc(r.author)}</div>
+      <div class="col-author">${authorChip(r.author, r.email, r.committer)}</div>
       <div class="col-date" title="${esc(fullTime(r.time))}">${esc(relTime(r.time))}</div>
       <div class="col-sha">${short(r.sha)}</div></div>`;
 }
@@ -753,10 +829,18 @@ function renderWindow(force = false) {
       nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R - 2.5}" fill="var(--bg)" stroke="${c}" stroke-width="2.5"/>`);
     } else {
       nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R}" fill="${c}" stroke="var(--bg)" stroke-width="2"/>`);
-      nodes.push(`<text x="${x}" y="${cy + 3}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#1c1a17" font-family="IBM Plex Mono, monospace">${esc(initials(r.author))}</text>`);
+      nodes.push(`<text x="${x}" y="${cy + 3.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#1c1a17" font-family="IBM Plex Mono, monospace">${esc(initials(r.author))}</text>`);
+      // The author's picture covers the initials when it loads; a ring keeps the lane colour.
+      const url = avatarUrl(r.email);
+      if (avatarLoaded(url)) {
+        const d = NODE_R * 2 - 2;
+        nodes.push(`<image href="${esc(url)}" x="${x - d / 2}" y="${cy - d / 2}" width="${d}" height="${d}" clip-path="url(#avClip)" preserveAspectRatio="xMidYMid slice"/>`);
+        nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R - 0.5}" fill="none" stroke="${c}" stroke-width="2"/>`);
+      }
     }
   }
-  svg.innerHTML = `<g class="g-lines" fill="none" stroke-width="2" stroke-linecap="round">${paths.join("")}</g>${pathOverlay(first, last)}<g>${nodes.join("")}</g>`;
+  const defs = `<defs><clipPath id="avClip" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath></defs>`;
+  svg.innerHTML = `${defs}<g class="g-lines" fill="none" stroke-width="2" stroke-linecap="round">${paths.join("")}</g>${pathOverlay(first, last)}<g>${nodes.join("")}</g>`;
   svg.classList.toggle("has-path", !!state.hoverPath);
 
   // Keep loading older commits as the bottom comes into view.
@@ -863,6 +947,7 @@ async function selectCommit(sha) {
   const panel = $("detail");
   try {
     const c = await repoApi("GET", `/commit/${sha}`);
+    await loadAvatarHashes([c.email, c.committer_email]);
     if (state.selected !== sha) return;
     const [subject, ...rest] = c.message.split("\n");
     const parents = c.parents.map((p) => `<a data-goto="${p}">${short(p)}</a>`).join(" ");
@@ -878,9 +963,11 @@ async function selectCommit(sha) {
       ${actions}
       <pre class="message"><span class="subject-line">${esc(subject)}</span>${esc(rest.length ? "\n" + rest.join("\n") : "")}</pre>
       <dl class="kv">
-        <dt>author</dt><dd title="${esc(c.email)}">${esc(c.author)} &lt;${esc(c.email)}&gt;</dd>
+        <dt>author</dt><dd class="person">${authorChip(c.author, c.email, null, 26)}<span class="mail">${esc(c.email)}</span></dd>
         <dt>date</dt><dd>${esc(fullTime(c.author_time))}</dd>
-        ${c.committer !== c.author ? `<dt>committer</dt><dd>${esc(c.committer)}</dd>` : ""}
+        ${c.committer !== c.author || c.committer_email !== c.email
+          ? `<dt>committer</dt><dd class="person">${authorChip(c.committer, c.committer_email, null, 26)}<span class="mail">${esc(c.committer_email)} · ${esc(relTime(c.commit_time))}</span></dd>`
+          : ""}
         <dt>parents</dt><dd>${parents || "<i>root commit</i>"}</dd>
       </dl>
       <h3><span>${c.files.length} FILE${c.files.length === 1 ? "" : "S"} CHANGED</span>${c.parents.length > 1 ? `<span class="count">vs first parent</span>` : ""}</h3>
@@ -1929,6 +2016,7 @@ async function openFileHistory(path) {
   state.fileView = view;
   try {
     view.commits = await repoApi("GET", `/file-history?path=${encodeURIComponent(path)}`);
+    await loadAvatarHashes(view.commits.map((c) => c.email));
   } catch (e) {
     $("diffBody").innerHTML = `<div class="nodiff">${esc(e.message)}</div>`;
     return;
@@ -1936,7 +2024,7 @@ async function openFileHistory(path) {
   if (state.fileView !== view) return;
   const list = view.commits.map((c, i) => `<li data-hist="${i}" class="${i === 0 ? "active" : ""}" title="${esc(c.subject)}">
       <div class="h-sub">${esc(c.subject)}</div>
-      <div class="h-meta"><span class="copy">${short(c.sha)}</span> · ${esc(c.author)} · ${esc(relTime(c.time))}${c.path !== path ? ` · <i>${esc(c.path)}</i>` : ""}</div></li>`).join("");
+      <div class="h-meta"><span class="copy">${short(c.sha)}</span> · ${avatarHtml(c.author, c.email, 14)} ${esc(c.author)} · ${esc(relTime(c.time))}${c.path !== path ? ` · <i>${esc(c.path)}</i>` : ""}</div></li>`).join("");
   $("diffBody").innerHTML = `<div class="hist">
       <ul class="hist-list">${list || `<li class="empty-note">no commits touch this file</li>`}</ul>
       <div class="hist-diff" id="histDiff"></div></div>`;
@@ -2023,13 +2111,14 @@ async function runSearch() {
     $("diffBody").innerHTML = `<div class="nodiff">${esc(e.message)}</div>`;
     return;
   }
+  await loadAvatarHashes(res.commits.map((c) => c.email));
   if (state.fileView !== view) return;
   view.commits = res.commits;
   const loaded = new Set(state.rows.map((r) => r.sha));
   const items = res.commits.map((c) => `<li data-goto="${c.sha}" class="${loaded.has(c.sha) ? "" : "unloaded"}" title="${loaded.has(c.sha) ? "" : "older than the commits loaded in the graph"}">
       <span class="col-sha">${short(c.sha)}</span>
       <span class="s-sub">${c.refs.map((r) => `<span class="ref ${r.kind}" style="--c:var(--accent)">${esc(r.name)}</span>`).join("")} ${esc(c.subject)}</span>
-      <span class="s-meta">${esc(c.author)} · ${esc(relTime(c.time))}</span></li>`).join("");
+      <span class="s-meta">${authorChip(c.author, c.email, c.committer, 16)} · ${esc(relTime(c.time))}</span></li>`).join("");
   $("diffBody").innerHTML = `<div class="cx-bar"><span><b>${res.commits.length}</b>${res.limited ? "+" : ""} commit${res.commits.length === 1 ? "" : "s"} found in all branches${res.limited ? " (showing the newest)" : ""}</span></div>
     <ul class="search-list">${items || `<li class="empty-note">nothing found</li>`}</ul>`;
 }
@@ -2163,6 +2252,16 @@ function wire() {
     autoFetchTick();
   };
   $("fetchInfo").onclick = () => fetchNow($("btnFetch"));
+  $("btnAvatars").onclick = async () => {
+    state.showAvatars = !state.showAvatars;
+    try { localStorage.setItem("devtree.avatars", state.showAvatars ? "on" : "off"); } catch {}
+    $("btnAvatars").classList.toggle("on", state.showAvatars);
+    toast(state.showAvatars ? "Author pictures on (GitHub / Gravatar)" : "Author pictures off — initials only, nothing is fetched");
+    await loadAvatarHashes(state.rows.map((r) => r.email));
+    renderWindow(true);
+    if (state.selected && !["WIP", "COMPARE"].includes(state.selected)) selectCommit(state.selected);
+  };
+  $("btnAvatars").classList.toggle("on", state.showAvatars);
   $("pullMenu").onclick = (e) => {
     const b = e.target.closest("button[data-mode]");
     if (!b) return;
@@ -2448,6 +2547,7 @@ function wire() {
     if (theme) document.documentElement.dataset.theme = theme;
     state.pullMode = localStorage.getItem("devtree.pullMode") || "merge";
     state.diffSplit = !!localStorage.getItem("devtree.diffSplit");
+    state.showAvatars = localStorage.getItem("devtree.avatars") !== "off";
     const auto = localStorage.getItem("devtree.autoFetch");
     if (auto !== null && AUTO_FETCH_CHOICES.includes(+auto)) state.autoFetch = +auto;
   } catch {}
