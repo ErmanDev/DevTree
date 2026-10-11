@@ -8,9 +8,11 @@ const ROW_H = 30;
 const NODE_R = 9;
 const MAX_GRAPH_W = 420;
 const PAGE = 1000;
-// Warm retro lane colours, led by Claude orange.
-const LANES = ["#d97757", "#e3b448", "#8fb573", "#6fa3c7", "#c774a0", "#a08bd6", "#e08e45", "#5fb3a1", "#d4a373", "#b5bd68"];
-const laneColor = (i) => LANES[i % LANES.length];
+// Retro arcade lane colours, led by phosphor teal.
+const LANES = ["#2ec4b6", "#ffd166", "#ef476f", "#5aa9e6", "#7bd88f", "#b392f0", "#4cc9f0", "#f78fb3", "#c3e88d", "#ffa94d"];
+// Deeper versions of the same hues, readable on the light theme's pale background.
+const LANES_LIGHT = ["#0c8478", "#9a6b00", "#c2185b", "#1f6aa5", "#2f7d3b", "#7b4fc9", "#0a7fa8", "#b8457a", "#5c8a00", "#b85c00"];
+const laneColor = (i) => (document.documentElement.dataset.theme === "light" ? LANES_LIGHT : LANES)[i % LANES.length];
 const DRAG_TYPE = "application/x-devtree-ref";
 
 const state = {
@@ -829,7 +831,7 @@ function renderWindow(force = false) {
       nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R - 2.5}" fill="var(--bg)" stroke="${c}" stroke-width="2.5"/>`);
     } else {
       nodes.push(`<circle cx="${x}" cy="${cy}" r="${NODE_R}" fill="${c}" stroke="var(--bg)" stroke-width="2"/>`);
-      nodes.push(`<text x="${x}" y="${cy + 3.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#1c1a17" font-family="IBM Plex Mono, monospace">${esc(initials(r.author))}</text>`);
+      nodes.push(`<text x="${x}" y="${cy + 3.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#081114" font-family="IBM Plex Mono, monospace">${esc(initials(r.author))}</text>`);
       // The author's picture covers the initials when it loads; a ring keeps the lane colour.
       const url = avatarUrl(r.email);
       if (avatarLoaded(url)) {
@@ -2146,7 +2148,7 @@ async function openCompare(from, to) {
     (list.length > 30 ? `<li class="empty-note">…and ${list.length - 30} more</li>` : "");
   $("detail").innerHTML = `<div class="detail-pad">
     <h2>compare</h2>
-    <div class="cmp-ends"><span class="ref branch" style="--c:#6fa3c7">${esc(A)}</span> → <span class="ref branch" style="--c:var(--accent-2)">${esc(B)}</span>
+    <div class="cmp-ends"><span class="ref branch" style="--c:var(--blue)">${esc(A)}</span> → <span class="ref branch" style="--c:var(--accent-2)">${esc(B)}</span>
       <button class="mini" data-cmp="swap" title="Swap sides">⇄ SWAP</button></div>
     <p class="cmp-sum">${d.only_to.length} commit${d.only_to.length === 1 ? "" : "s"} only in <b>${esc(B)}</b> · ${d.only_from.length} only in <b>${esc(A)}</b></p>
     <h3><span>${d.files.length} FILE${d.files.length === 1 ? "" : "S"} DIFFER</span></h3>
@@ -2274,6 +2276,7 @@ function wire() {
     const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem("devtree.theme", next); } catch {}
+    renderGraph(); // lane colours depend on the theme
   };
   $("opBanner").onclick = (e) => {
     const b = e.target.closest("button[data-op]");

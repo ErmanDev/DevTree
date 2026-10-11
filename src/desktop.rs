@@ -47,7 +47,7 @@ pub fn run(url: &str, data_dir: &Path) -> ! {
     let origin = format!("{url}/");
     let builder = WebViewBuilder::new_with_web_context(&mut context)
         .with_url(url)
-        .with_background_color((28, 26, 23, 255))
+        .with_background_color((13, 19, 23, 255))
         .with_clipboard(true)
         .with_hotkeys_zoom(true)
         .with_devtools(cfg!(debug_assertions))

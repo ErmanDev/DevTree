@@ -1,4 +1,4 @@
-/* DevTree documentation — the app's retro look in Claude's warm palette. */
+/* DevTree documentation — the app's retro CRT look: phosphor teal, arcade yellow and pink. */
 
 :root {
   --pixel: "VT323", ui-monospace, monospace;
@@ -8,62 +8,65 @@
   --max: 1180px;
   --read: 760px;
 
-  --bg: #1c1a17;
-  --bg-2: #23201c;
-  --panel: #2a2622;
-  --line: #3d3731;
-  --line-soft: #2f2b26;
-  --text: #f0e8d8;
-  --muted: #b3aa98;
-  --faint: #7d7466;
-  --accent: #d97757;
-  --accent-ink: #1c1a17;
-  --accent-2: #e3b448;
-  --green: #8fb573;
-  --blue: #6fa3c7;
-  --red: #e0705a;
-  --shadow: #0d0c0a;
-  --scan: rgba(0, 0, 0, .07);
+  --bg: #0d1317;
+  --bg-2: #111a1f;
+  --panel: #16222a;
+  --line: #26394a;
+  --line-soft: #1b2a33;
+  --text: #e2f3ee;
+  --muted: #8faaa6;
+  --faint: #5b7378;
+  --accent: #2ec4b6;
+  --accent-ink: #081114;
+  --accent-2: #ffd166;
+  --green: #7bd88f;
+  --blue: #5aa9e6;
+  --red: #ff6b6b;
+  --shadow: #04080a;
+  --pink: #ef476f;
+  --scan: rgba(0, 0, 0, .10);
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #f4f0e6;
-    --bg-2: #ece6d8;
-    --panel: #e6dfcf;
-    --line: #cfc5b1;
-    --line-soft: #ddd5c4;
-    --text: #2a2520;
-    --muted: #5e564b;
-    --faint: #8c8274;
-    --accent: #b9532f;
-    --accent-ink: #fffaf0;
-    --accent-2: #9c7020;
-    --green: #4f7d35;
-    --blue: #2f6f9c;
-    --red: #b4432c;
-    --shadow: #2a2520;
+    --bg: #eef3ec;
+    --bg-2: #e3ebe2;
+    --panel: #d9e4d8;
+    --line: #b5c6b9;
+    --line-soft: #cbd8cd;
+    --text: #16262a;
+    --muted: #4b605e;
+    --faint: #869a96;
+    --accent: #0c8478;
+    --accent-ink: #f4fffc;
+    --accent-2: #9a6b00;
+    --green: #2f7d3b;
+    --blue: #1f6aa5;
+    --red: #b8322e;
+    --shadow: #16262a;
+    --pink: #c2185b;
     --scan: transparent;
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
-  --bg: #f4f0e6;
-  --bg-2: #ece6d8;
-  --panel: #e6dfcf;
-  --line: #cfc5b1;
-  --line-soft: #ddd5c4;
-  --text: #2a2520;
-  --muted: #5e564b;
-  --faint: #8c8274;
-  --accent: #b9532f;
-  --accent-ink: #fffaf0;
-  --accent-2: #9c7020;
-  --green: #4f7d35;
-  --blue: #2f6f9c;
-  --red: #b4432c;
-  --shadow: #2a2520;
+  --bg: #eef3ec;
+  --bg-2: #e3ebe2;
+  --panel: #d9e4d8;
+  --line: #b5c6b9;
+  --line-soft: #cbd8cd;
+  --text: #16262a;
+  --muted: #4b605e;
+  --faint: #869a96;
+  --accent: #0c8478;
+  --accent-ink: #f4fffc;
+  --accent-2: #9a6b00;
+  --green: #2f7d3b;
+  --blue: #1f6aa5;
+  --red: #b8322e;
+  --shadow: #16262a;
+  --pink: #c2185b;
   --scan: transparent;
   color-scheme: light;
 }

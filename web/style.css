@@ -1,4 +1,4 @@
-/* DevTree — retro terminal look in Claude's warm palette. */
+/* DevTree — retro CRT terminal look: phosphor teal, arcade yellow and pink on a deep blue-black. */
 
 :root {
   --row-h: 30px;
@@ -8,46 +8,50 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #1c1a17;
-  --bg-2: #23201c;
-  --panel: #2a2622;
-  --line: #3d3731;
-  --line-soft: #2f2b26;
-  --text: #f0e8d8;
-  --muted: #a09888;
-  --faint: #6f675c;
-  --accent: #d97757;
-  --accent-ink: #1c1a17;
-  --accent-2: #e3b448;
-  --hover: #2f2a25;
-  --select: #3a2b23;
-  --shadow: #0d0c0a;
-  --add: #8fb573;
-  --add-bg: rgba(143, 181, 115, .12);
-  --del: #e0705a;
-  --del-bg: rgba(224, 112, 90, .12);
-  --scan: rgba(0, 0, 0, .08);
+  --bg: #0d1317;
+  --bg-2: #111a1f;
+  --panel: #16222a;
+  --line: #26394a;
+  --line-soft: #1b2a33;
+  --text: #e2f3ee;
+  --muted: #8faaa6;
+  --faint: #5b7378;
+  --accent: #2ec4b6;
+  --accent-ink: #081114;
+  --accent-2: #ffd166;
+  --hover: #18252d;
+  --select: #123338;
+  --shadow: #04080a;
+  --blue: #5aa9e6;
+  --pink: #ef476f;
+  --add: #7bd88f;
+  --add-bg: rgba(123, 216, 143, .12);
+  --del: #ff6b6b;
+  --del-bg: rgba(255, 107, 107, .12);
+  --scan: rgba(0, 0, 0, .10);
 }
 
 :root[data-theme="light"] {
-  --bg: #f4f0e6;
-  --bg-2: #ece6d8;
-  --panel: #e6dfcf;
-  --line: #cfc5b1;
-  --line-soft: #ddd5c4;
-  --text: #2a2520;
-  --muted: #6e6559;
-  --faint: #a2988a;
-  --accent: #c15f3c;
-  --accent-ink: #fffaf0;
-  --accent-2: #b8862b;
-  --hover: #e9e2d2;
-  --select: #f1d9cb;
-  --shadow: #2a2520;
-  --add: #4f7d35;
-  --add-bg: rgba(79, 125, 53, .12);
-  --del: #b4432c;
-  --del-bg: rgba(180, 67, 44, .1);
+  --bg: #eef3ec;
+  --bg-2: #e3ebe2;
+  --panel: #d9e4d8;
+  --line: #b5c6b9;
+  --line-soft: #cbd8cd;
+  --text: #16262a;
+  --muted: #4b605e;
+  --faint: #869a96;
+  --accent: #0c8478;
+  --accent-ink: #f4fffc;
+  --accent-2: #9a6b00;
+  --hover: #e1eae0;
+  --select: #cce8e1;
+  --shadow: #16262a;
+  --blue: #1f6aa5;
+  --pink: #c2185b;
+  --add: #2f7d3b;
+  --add-bg: rgba(47, 125, 59, .12);
+  --del: #b8322e;
+  --del-bg: rgba(184, 50, 46, .1);
   --scan: transparent;
 }
 
@@ -316,7 +320,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   height: var(--s);
   border-radius: 50%;
   background: var(--c);
-  color: #1c1a17;
+  color: #081114;
   font: 700 calc(var(--s) * .42)/1 var(--font);
   overflow: hidden;
   vertical-align: middle;
@@ -411,8 +415,8 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .st-A, .st-\? { background: var(--add); }
 .st-D { background: var(--del); }
 .st-M { background: var(--accent-2); }
-.st-R, .st-C { background: #6fa3c7; }
-.st-U { background: #c774a0; }
+.st-R, .st-C { background: var(--blue); }
+.st-U { background: var(--pink); }
 
 .commit-box { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .commit-box textarea { resize: vertical; min-height: 84px; }
@@ -473,13 +477,11 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .diff-body .sc.empty { background: repeating-linear-gradient(-45deg, transparent 0 4px, var(--line-soft) 4px 5px); }
 
 /* syntax colours (retro) */
-.tk-k { color: var(--accent); }
-.tk-s { color: #8fb573; }
+.tk-k { color: var(--pink); }
+.tk-s { color: var(--add); }
 .tk-n { color: var(--accent-2); }
 .tk-c { color: var(--faint); font-style: italic; }
-.tk-t { color: #6fa3c7; }
-:root[data-theme="light"] .tk-s { color: #4f7d35; }
-:root[data-theme="light"] .tk-t { color: #2f6f9c; }
+.tk-t { color: var(--blue); }
 
 .btn.on { background: var(--select); color: var(--accent); }
 
@@ -539,7 +541,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(10, 9, 8, .6);
+  background: rgba(4, 8, 10, .65);
   display: grid;
   place-items: center;
   z-index: 60;
@@ -658,10 +660,10 @@ h3 .warn { color: var(--del); }
 .cx-side { min-width: 0; border-right: 1px solid var(--line); }
 .cx-side:last-child { border-right: 0; }
 .cx-label { padding: 3px 10px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--line-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cx-label.ours { color: #6fa3c7; }
+.cx-label.ours { color: var(--blue); }
 .cx-label.theirs { color: var(--accent-2); }
 .cx-code { margin: 0; padding: 6px 10px; white-space: pre; overflow-x: auto; font: 12px/1.5 var(--font); min-height: 26px; }
-.cx-code.ours { background: color-mix(in srgb, #6fa3c7 9%, transparent); }
+.cx-code.ours { background: color-mix(in srgb, var(--blue) 9%, transparent); }
 .cx-code.theirs { background: color-mix(in srgb, var(--accent-2) 9%, transparent); }
 .cx-code.result { background: var(--add-bg); }
 .cx-code:empty::before { content: "(empty)"; color: var(--faint); font-style: italic; }
@@ -742,7 +744,7 @@ h3 .warn { color: var(--del); }
 .rb-move { display: flex; gap: 2px; }
 .rb-move .mini { padding: 0 5px; }
 .rb-list li.a-reword select { border-color: var(--accent-2); color: var(--accent-2); }
-.rb-list li.a-squash select, .rb-list li.a-fixup select { border-color: #6fa3c7; color: #6fa3c7; }
+.rb-list li.a-squash select, .rb-list li.a-fixup select { border-color: var(--blue); color: var(--blue); }
 .rb-list li.a-squash, .rb-list li.a-fixup { margin-left: 22px; }
 .rb-list li.a-drop .rb-msg { text-decoration: line-through; color: var(--faint); }
 .rb-list li.a-drop select { border-color: var(--del); color: var(--del); }

@@ -1,6 +1,6 @@
 # DevTree 🌳
 
-A lightweight, local, GitKraken-style git client written in Rust, with a retro terminal UI in Claude's warm palette.
+A fast, lightweight desktop git client written in Rust. See your history as a colorful commit graph, stage single lines, resolve conflicts side by side and rewrite history with an interactive rebase, all in a retro CRT-terminal look.
 
 It runs as one small desktop program (~3 MB release build). The UI is drawn by your system's own web engine (WebView2, WKWebView or WebKitGTK), so there's no Electron and no bundled browser. It can also run in your web browser.
 
@@ -9,7 +9,7 @@ It runs as one small desktop program (~3 MB release build). The UI is drawn by y
 - **Commit graph**: colored lanes with curved merge and branch edges, author-initial nodes, a ring around HEAD, and branch/remote/tag badges.
   - Only the rows on screen are drawn, so a 30,000-commit history scrolls smoothly. Older commits load as you scroll down.
   - Hovering a commit highlights its line of history (its first-parent path).
-- **WIP row**: uncommitted changes appear at the top of the graph, like GitKraken.
+- **WIP row**: uncommitted changes appear at the top of the graph, so you always see what you're about to commit.
 - **Author chips**: every commit shows its author's picture and name, both in the graph node and in the AUTHOR column. The commit details show author and committer.
   - **Where pictures come from:** GitHub `noreply` emails use the GitHub avatar; other emails use Gravatar, looked up by a SHA-256 hash of the email.
   - **When there's no picture,** or you're offline, colored initials are shown instead.
