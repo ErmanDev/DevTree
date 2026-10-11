@@ -17,6 +17,10 @@ wry = { version = "0.57.0", optional = true }
 # macOS only delivers Cmd+C/V/X/A/Z and Cmd+Q to a window through its menu bar.
 muda = { version = "0.21.2", optional = true }
 
+[target.'cfg(windows)'.build-dependencies]
+# Gives devtree.exe its icon and version details in Explorer.
+winresource = "0.1.31"
+
 [features]
 default = ["desktop"]
 # Build without it (`--no-default-features`) for a browser-only binary with no GUI libraries.

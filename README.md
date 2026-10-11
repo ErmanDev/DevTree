@@ -45,6 +45,13 @@ It runs as one small desktop program (~3 MB release build). The UI is drawn by y
 - Commit filter (`/`), keyboard navigation (`↑/↓` or `j/k`), `r` to refresh, light and dark retro themes.
 - A console that shows every git command run and its output.
 
+## Download
+
+- **Windows 10 / 11 (64-bit):** [devtree-windows-x64.exe](https://github.com/ErmanDev/DevTree/releases/latest/download/devtree-windows-x64.exe). Install [Git for Windows](https://git-scm.com/download/win) first. The file isn't code-signed yet, so SmartScreen may ask you to confirm (More info → Run anyway).
+- **macOS and Linux:** build from source (below) for now.
+
+Releases are built by `.github/workflows/release.yml`: push a tag such as `v0.1.0`, or run the Release workflow by hand.
+
 ## Run it
 
 Requires Rust and `git` on your `PATH`. On Linux, also install the WebKitGTK and GTK development packages, e.g. `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev` (or build the browser-only version with `--no-default-features`). Step-by-step setup for each system is in the [install guide](site/docs/install.html).

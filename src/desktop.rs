@@ -9,7 +9,7 @@ use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Icon, WindowBuilder},
 };
 use wry::{NewWindowResponse, WebContext, WebViewBuilder};
 
@@ -38,6 +38,7 @@ pub fn run(url: &str, data_dir: &Path) -> ! {
         .with_title("DevTree")
         .with_inner_size(LogicalSize::new(1440.0, 900.0))
         .with_min_inner_size(LogicalSize::new(900.0, 560.0))
+        .with_window_icon(window_icon())
         .build(&event_loop)
         .unwrap_or_else(|e| fail(&format!("cannot open a window: {e}")));
 
@@ -88,6 +89,11 @@ pub fn run(url: &str, data_dir: &Path) -> ! {
             _ => {}
         }
     })
+}
+
+/// The ⎇ logo (assets/icon.svg) as 64×64 RGBA pixels, for the title bar and taskbar.
+fn window_icon() -> Option<Icon> {
+    Icon::from_rgba(include_bytes!("../assets/icon-64.rgba").to_vec(), 64, 64).ok()
 }
 
 fn url_without_slash(origin: &str) -> &str {

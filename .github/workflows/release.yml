@@ -1,0 +1,66 @@
+name: Release
+
+# Builds the Windows download and attaches it to a GitHub Release.
+# Publish a version by pushing a tag:  git tag v0.1.0 && git push origin v0.1.0
+# or run this workflow by hand (Actions → Release → Run workflow) with the tag to create.
+# The docs link to releases/latest/download/devtree-windows-x64.exe, so the newest release
+# is always what people download.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to publish, e.g. v0.1.0 (created on this commit if it doesn't exist)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check the tag
+        shell: bash
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "::error::tag must look like v1.2.3, got '$TAG'"; exit 1; }
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir dist
+          cp target/release/devtree.exe dist/devtree-windows-x64.exe
+          cd dist
+          sha256sum devtree-windows-x64.exe > devtree-windows-x64.exe.sha256
+          cat devtree-windows-x64.exe.sha256
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "DevTree $TAG" --notes "$(cat <<'EOF'
+          ## Download
+
+          - **Windows 10 / 11 (64-bit):** `devtree-windows-x64.exe` below. Install [Git for Windows](https://git-scm.com/download/win) first.
+          - **macOS and Linux:** build from source for now, see the [install guide](https://devtree-4594d.web.app/docs/install).
+
+          The download isn't code-signed yet, so Windows SmartScreen may warn the first time: choose **More info → Run anyway**.
+          EOF
+          )"
+          fi
+          gh release upload "$TAG" dist/* --clobber

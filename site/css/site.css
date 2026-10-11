@@ -312,19 +312,42 @@ td code { white-space: nowrap; }
 /* ---------------------------------------------------------------- narrow screens */
 
 /* Install page: OS tabs. Without JavaScript every panel is shown. */
-.os-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 28px; }
+.os-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 8px 0 28px; }
 .os-tabs a {
-  font: 600 14px var(--mono);
-  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
   border: 2px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
   color: var(--text);
   text-decoration: none;
   box-shadow: 3px 3px 0 var(--shadow);
+  transition: transform .06s, box-shadow .06s, border-color .1s;
 }
-.os-tabs a:hover { border-color: var(--accent); }
+.os-tabs a:hover { border-color: var(--accent); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--shadow); }
+.os-tabs a > span { display: flex; flex-direction: column; min-width: 0; }
+.os-tabs b { font: 600 16px var(--mono); }
+.os-tabs small { font: 12px var(--mono); color: var(--muted); }
+.os-tabs .os-ico { width: 30px; height: 30px; flex: none; }
 .os-tabs a[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.os-tabs a[aria-selected="true"] small { color: var(--accent-ink); opacity: .85; }
+.os-ico { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.12em; }
+.os-head { display: flex; align-items: center; gap: 12px; }
+.os-head .os-ico { width: .9em; height: .9em; color: var(--accent); }
+
+/* Download button: logo + two lines. */
+.download { margin: 6px 0 18px; }
+.btn-dl { text-transform: none; letter-spacing: 0; padding: 12px 20px; gap: 14px; }
+.btn-dl .os-ico { width: 28px; height: 28px; }
+.btn-dl > span { display: flex; flex-direction: column; text-align: left; }
+.btn-dl b { font: 600 16px var(--mono); }
+.btn-dl small { font: 12px var(--mono); opacity: .85; }
+.dl-meta { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+.os-row { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 18px; font: 13px var(--mono); color: var(--muted); }
+.os-row span { display: inline-flex; align-items: center; gap: 6px; }
+.os-row .os-ico { width: 16px; height: 16px; color: var(--text); }
 .tabs-on .os-panel > h2:first-child { margin-top: 0; }
 
 @media (max-width: 960px) {
@@ -335,6 +358,7 @@ td code { white-space: nowrap; }
   .toc { position: static; max-height: none; margin-bottom: 8px; padding: 14px; border: 2px solid var(--line); border-radius: var(--radius); }
 }
 @media (max-width: 720px) {
+  .os-tabs { grid-template-columns: 1fr; }
   .wrap { padding: 0 16px; }
   .icon-btn.menu-btn { display: inline-flex; }
   .nav {
