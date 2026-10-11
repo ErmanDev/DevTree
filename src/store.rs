@@ -25,7 +25,10 @@ impl Store {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        Store { file, repos: Mutex::new(repos) }
+        Store {
+            file,
+            repos: Mutex::new(repos),
+        }
     }
 
     pub async fn list(&self) -> Vec<Repo> {
@@ -39,7 +42,10 @@ impl Store {
     /// Adds a repository (idempotent for the same path) and returns it.
     pub async fn add(&self, path: PathBuf) -> Result<Repo, String> {
         let id = id_for(&path);
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string());
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
         let mut repos = self.repos.lock().await;
         if let Some(existing) = repos.iter().find(|r| r.path == path) {
             return Ok(existing.clone());

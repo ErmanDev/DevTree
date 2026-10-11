@@ -2219,7 +2219,10 @@ function wire() {
   });
   $("remoteList").addEventListener("click", (e) => {
     const head = e.target.closest("li[data-remote]");
-    if (head) showMenu(e.clientX, e.clientY, remoteMenuItems(head.dataset.remote));
+    if (!head) return;
+    // Keep this click from reaching the document handler that closes menus.
+    e.stopPropagation();
+    showMenu(e.clientX, e.clientY, remoteMenuItems(head.dataset.remote));
   });
   $("btnAddRemote").onclick = addRemote;
   $("stashList").onclick = (e) => {

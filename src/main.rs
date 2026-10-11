@@ -7,6 +7,7 @@ mod net;
 mod rebase;
 mod store;
 
+use api::{ApiError, ApiResult, AppState, Shared, bad, net_result, ok, repo, valid_ref, valid_sha};
 use axum::{
     Json, Router,
     extract::{Path as UrlPath, Query, Request, State},
@@ -15,20 +16,18 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
+use net::{JobQuery, remote_cmd};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use api::{ApiError, ApiResult, AppState, Shared, bad, net_result, ok, repo, valid_ref, valid_sha};
-use net::{JobQuery, remote_cmd};
 use store::Store;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 const DIFF_JS: &str = include_str!("../web/diff.js");
 const STYLE_CSS: &str = include_str!("../web/style.css");
-
 
 // ---------------------------------------------------------------- startup
 
@@ -40,7 +39,10 @@ struct Config {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn parse_args() -> Config {
@@ -70,7 +72,7 @@ fn usage(err: &str) -> ! {
     }
     eprintln!(
         "DevTree – a lightweight local git client\n\n\
-         USAGE: devtree [--port 7878] [--data-dir ~/.devtree] [--clone-dir ~/devtree-repos] [--no-open]"
+         USAGE: devtree [--port 7878 (0 = any free port)] [--data-dir ~/.devtree] [--clone-dir ~/devtree-repos] [--no-open]"
     );
     std::process::exit(if err.is_empty() { 0 } else { 2 });
 }
@@ -105,7 +107,11 @@ fn main() {
 }
 
 async fn serve(cfg: Config) {
-    let state = Arc::new(AppState { store: Store::load(&cfg.data_dir), clone_dir: cfg.clone_dir, net: net::Net::new() });
+    let state = Arc::new(AppState {
+        store: Store::load(&cfg.data_dir),
+        clone_dir: cfg.clone_dir,
+        net: net::Net::new(),
+    });
 
     let api = Router::new()
         .route("/repos", get(list_repos).post(import_repo))
@@ -156,7 +162,10 @@ async fn serve(cfg: Config) {
         .route("/repos/{id}/remote-net/{action}", post(actions::remote_network))
         .route("/jobs/{job}", get(net::job_status))
         .route("/jobs/{job}/cancel", post(net::job_cancel))
-        .route("/credentials", get(net::list_credentials).post(net::set_credentials).delete(net::forget_credentials))
+        .route(
+            "/credentials",
+            get(net::list_credentials).post(net::set_credentials).delete(net::forget_credentials),
+        )
         .route("/fs", get(browse))
         .layer(middleware::from_fn(require_api_header));
 
@@ -178,7 +187,9 @@ async fn serve(cfg: Config) {
             std::process::exit(1);
         }
     };
-    let url = format!("http://localhost:{}", cfg.port);
+    // With --port 0 the OS picks a free port; report the real one (tests rely on this line).
+    let port = listener.local_addr().map(|a| a.port()).unwrap_or(cfg.port);
+    let url = format!("http://localhost:{port}");
     println!("🌳 DevTree running at {url}  (Ctrl+C to stop)");
     if cfg.open {
         open_browser(&url);
@@ -187,7 +198,14 @@ async fn serve(cfg: Config) {
 }
 
 fn asset(body: &'static str, ty: &'static str) -> Response {
-    ([(header::CONTENT_TYPE, HeaderValue::from_static(ty)), (header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))], body).into_response()
+    (
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static(ty)),
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-cache")),
+        ],
+        body,
+    )
+        .into_response()
 }
 
 fn open_browser(url: &str) {
@@ -211,7 +229,11 @@ fn open_browser(url: &str) {
 /// Rejects requests whose Host is not loopback, which defeats DNS-rebinding attacks.
 async fn require_local_host(req: Request, next: Next) -> Response {
     let host = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("");
-    let name = if host.starts_with('[') { host.split(']').next().map(|h| format!("{h}]")).unwrap_or_default() } else { host.split(':').next().unwrap_or("").to_string() };
+    let name = if host.starts_with('[') {
+        host.split(']').next().map(|h| format!("{h}]")).unwrap_or_default()
+    } else {
+        host.split(':').next().unwrap_or("").to_string()
+    };
     if matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]") {
         next.run(req).await
     } else {
@@ -435,7 +457,9 @@ async fn push(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<Jo
     // No upstream yet: publish the branch to the first remote (preferring origin) and track it.
     let remote;
     if st.upstream.is_none() {
-        remote = git::default_remote(&r.path).await?.ok_or_else(|| bad("this repository has no remote to push to"))?;
+        remote = git::default_remote(&r.path)
+            .await?
+            .ok_or_else(|| bad("this repository has no remote to push to"))?;
         args.extend(["-u", remote.as_str(), branch.as_str()]);
     }
     remote_cmd(&s, &r, &args, q.job.as_deref()).await
@@ -462,7 +486,13 @@ async fn checkout(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<
     let out = if b.remote {
         // Re-use an existing local branch of the same name, otherwise create a tracking one.
         let local = name.split_once('/').map(|(_, l)| l).unwrap_or(name);
-        let exists = git::run(&r.path, &["show-ref", "--verify", "--quiet", &format!("refs/heads/{local}")], git::LOCAL_TIMEOUT).await?.ok;
+        let exists = git::run(
+            &r.path,
+            &["show-ref", "--verify", "--quiet", &format!("refs/heads/{local}")],
+            git::LOCAL_TIMEOUT,
+        )
+        .await?
+        .ok;
         if exists {
             git::run(&r.path, &["switch", local], git::LOCAL_TIMEOUT).await?
         } else {
@@ -503,7 +533,11 @@ async fn unstage(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json<P
     let r = repo(&s, &id).await?;
     let has_head = git::run(&r.path, &["rev-parse", "--verify", "--quiet", "HEAD"], git::LOCAL_TIMEOUT).await?.ok;
     // Before the first commit there is no HEAD to restore from, so drop the paths from the index instead.
-    let mut args = if has_head { vec!["reset", "-q", "HEAD", "--"] } else { vec!["rm", "-r", "-q", "--cached", "--"] };
+    let mut args = if has_head {
+        vec!["reset", "-q", "HEAD", "--"]
+    } else {
+        vec!["rm", "-r", "-q", "--cached", "--"]
+    };
     if b.paths.is_empty() {
         args.push(".");
     }

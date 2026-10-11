@@ -30,7 +30,11 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        ApiError { status, message: message.into(), extra: None }
+        ApiError {
+            status,
+            message: message.into(),
+            extra: None,
+        }
     }
 }
 
@@ -59,11 +63,19 @@ pub fn ok<T: serde::Serialize>(v: T) -> ApiResult {
 }
 
 pub async fn repo(state: &AppState, id: &str) -> Result<Repo, ApiError> {
-    state.store.get(id).await.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown repository {id}")))
+    state
+        .store
+        .get(id)
+        .await
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown repository {id}")))
 }
 
 pub fn valid_sha(s: &str) -> Result<&str, ApiError> {
-    if (4..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit()) { Ok(s) } else { Err(bad("invalid commit id")) }
+    if (4..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(s)
+    } else {
+        Err(bad("invalid commit id"))
+    }
 }
 
 /// Refuses anything git could read as an option, plus whitespace/control characters.

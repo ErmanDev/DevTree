@@ -35,17 +35,29 @@ pub fn write_todo(file: Option<&str>) -> std::io::Result<()> {
 /// proposed it, except during a reword step of a DevTree rebase.
 pub fn edit_message(file: Option<&str>) -> std::io::Result<()> {
     let Some(file) = file else { return Ok(()) };
-    let Ok(out) = std::process::Command::new("git").args(["rev-parse", "--absolute-git-dir"]).output() else { return Ok(()) };
+    let Ok(out) = std::process::Command::new("git").args(["rev-parse", "--absolute-git-dir"]).output() else {
+        return Ok(());
+    };
     let git_dir = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
-    let Ok(map) = std::fs::read_to_string(git_dir.join(REWORD_FILE)) else { return Ok(()) };
+    let Ok(map) = std::fs::read_to_string(git_dir.join(REWORD_FILE)) else {
+        return Ok(());
+    };
     let map: HashMap<String, String> = serde_json::from_str(&map).unwrap_or_default();
     // git moves the step it is executing to the end of `done` before calling the editor.
     let done = std::fs::read_to_string(git_dir.join("rebase-merge/done")).unwrap_or_default();
-    let Some(step) = done.lines().rev().find(|l| !l.trim().is_empty() && !l.starts_with('#')) else { return Ok(()) };
+    let Some(step) = done.lines().rev().find(|l| !l.trim().is_empty() && !l.starts_with('#')) else {
+        return Ok(());
+    };
     let mut parts = step.split_whitespace();
-    let (Some(action), Some(sha)) = (parts.next(), parts.next()) else { return Ok(()) };
+    let (Some(action), Some(sha)) = (parts.next(), parts.next()) else {
+        return Ok(());
+    };
     let reword = matches!(action, "reword" | "r");
-    if let Some(msg) = map.iter().find(|(k, _)| reword && (k.starts_with(sha) || sha.starts_with(k.as_str()))).map(|(_, m)| m) {
+    if let Some(msg) = map
+        .iter()
+        .find(|(k, _)| reword && (k.starts_with(sha) || sha.starts_with(k.as_str())))
+        .map(|(_, m)| m)
+    {
         std::fs::write(file, format!("{}\n", msg.trim_end()))?;
     }
     Ok(())
@@ -126,7 +138,12 @@ pub async fn start(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json
         match step.action.as_str() {
             "pick" | "drop" => {}
             "reword" => {
-                let msg = step.message.as_deref().map(str::trim).filter(|m| !m.is_empty()).ok_or_else(|| bad("a reworded commit needs a message"))?;
+                let msg = step
+                    .message
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|m| !m.is_empty())
+                    .ok_or_else(|| bad("a reworded commit needs a message"))?;
                 rewords.insert(c.sha.clone(), msg.to_string());
             }
             "squash" | "fixup" if !kept_any => return Err(bad("the first commit can't be squashed: there's nothing above it to squash into")),
@@ -144,9 +161,13 @@ pub async fn start(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b): Json
 
     let git_dir = PathBuf::from(git::run_ok(&r.path, &["rev-parse", "--absolute-git-dir"]).await?.trim());
     let reword_file = git_dir.join(REWORD_FILE);
-    std::fs::write(&reword_file, serde_json::to_string(&rewords).unwrap_or_default()).map_err(|e| bad(format!("cannot write {}: {e}", reword_file.display())))?;
+    std::fs::write(&reword_file, serde_json::to_string(&rewords).unwrap_or_default())
+        .map_err(|e| bad(format!("cannot write {}: {e}", reword_file.display())))?;
 
-    let extra = Extra { env: vec![(TODO_ENV, todo), ("GIT_SEQUENCE_EDITOR", write_todo)], ..Default::default() };
+    let extra = Extra {
+        env: vec![(TODO_ENV, todo), ("GIT_SEQUENCE_EDITOR", write_todo)],
+        ..Default::default()
+    };
     let out = git::run_with(&r.path, &["rebase", "-i", "--autostash", &base], NETWORK_TIMEOUT, &extra).await?;
     if out.ok {
         let _ = std::fs::remove_file(&reword_file);

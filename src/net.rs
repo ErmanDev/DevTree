@@ -6,8 +6,8 @@
 //! on a command line, and are only kept in memory.
 
 use crate::api::{ApiError, ApiResult, AppState, Shared, bad, net_result, ok};
-use crate::store::Repo;
 use crate::git::{self, CANCELLED, Extra, GitOutput, Job};
+use crate::store::Repo;
 use axum::{
     Json,
     extract::{Path as UrlPath, State},
@@ -104,7 +104,10 @@ pub async fn run_network(net: &Net, lock_key: &str, dir: &Path, args: &[&str], t
                 lock.lock().await
             }
         };
-        let mut extra = Extra { job: job.as_ref().map(|(_, j)| j.clone()), ..Default::default() };
+        let mut extra = Extra {
+            job: job.as_ref().map(|(_, j)| j.clone()),
+            ..Default::default()
+        };
         net.credential_extra(&mut extra);
         ssh_batch_mode(dir, &mut extra).await;
         let used_creds = !extra.config.is_empty();
@@ -166,7 +169,15 @@ pub async fn set_credentials(State(s): Shared, Json(b): Json<CredBody>) -> ApiRe
     if host.is_empty() || host.chars().any(|c| c.is_whitespace() || c == '/') || b.username.contains('\n') || b.password.contains('\n') {
         return Err(bad("invalid host or credentials"));
     }
-    s.net.creds.lock().unwrap().insert(host.clone(), Cred { host: host.clone(), username: b.username, password: b.password, keep: b.remember });
+    s.net.creds.lock().unwrap().insert(
+        host.clone(),
+        Cred {
+            host: host.clone(),
+            username: b.username,
+            password: b.password,
+            keep: b.remember,
+        },
+    );
     ok(json!({ "host": host }))
 }
 
@@ -195,11 +206,22 @@ pub struct AuthFailure {
 pub fn auth_failure(stderr: &str) -> Option<AuthFailure> {
     let lower = stderr.to_lowercase();
     if lower.contains("host key verification failed") {
-        return Some(AuthFailure { kind: "ssh", host: None, reason: Some("hostkey") });
+        return Some(AuthFailure {
+            kind: "ssh",
+            host: None,
+            reason: Some("hostkey"),
+        });
     }
     if lower.contains("permission denied (publickey") || lower.contains("permission denied, please try again") {
-        let host = stderr.lines().find_map(|l| l.split_once("@").map(|(_, h)| h.split([':', ' ']).next().unwrap_or("").to_string())).filter(|h| !h.is_empty());
-        return Some(AuthFailure { kind: "ssh", host, reason: Some("publickey") });
+        let host = stderr
+            .lines()
+            .find_map(|l| l.split_once("@").map(|(_, h)| h.split([':', ' ']).next().unwrap_or("").to_string()))
+            .filter(|h| !h.is_empty());
+        return Some(AuthFailure {
+            kind: "ssh",
+            host,
+            reason: Some("publickey"),
+        });
     }
     const HTTPS: [&str; 7] = [
         "could not read username",
@@ -211,7 +233,11 @@ pub fn auth_failure(stderr: &str) -> Option<AuthFailure> {
         "the requested url returned error: 403",
     ];
     if HTTPS.iter().any(|p| lower.contains(p)) {
-        return Some(AuthFailure { kind: "https", host: url_host(stderr), reason: None });
+        return Some(AuthFailure {
+            kind: "https",
+            host: url_host(stderr),
+            reason: None,
+        });
     }
     None
 }
@@ -257,7 +283,14 @@ mod tests {
     #[test]
     fn recognises_https_auth_failures() {
         let e = "fatal: could not read Username for 'https://github.com': terminal prompts disabled";
-        assert_eq!(auth_failure(e), Some(AuthFailure { kind: "https", host: Some("github.com".into()), reason: None }));
+        assert_eq!(
+            auth_failure(e),
+            Some(AuthFailure {
+                kind: "https",
+                host: Some("github.com".into()),
+                reason: None
+            })
+        );
         let e = "remote: Invalid username or password.\nfatal: Authentication failed for 'https://bob@git.example.com:8443/team/repo.git/'";
         assert_eq!(auth_failure(e).unwrap().host.as_deref(), Some("git.example.com:8443"));
     }
@@ -265,7 +298,14 @@ mod tests {
     #[test]
     fn recognises_ssh_failures() {
         let e = "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.";
-        assert_eq!(auth_failure(e), Some(AuthFailure { kind: "ssh", host: Some("github.com".into()), reason: Some("publickey") }));
+        assert_eq!(
+            auth_failure(e),
+            Some(AuthFailure {
+                kind: "ssh",
+                host: Some("github.com".into()),
+                reason: Some("publickey")
+            })
+        );
         assert_eq!(auth_failure("Host key verification failed.").unwrap().reason, Some("hostkey"));
         assert_eq!(auth_failure("fatal: not a git repository"), None);
     }

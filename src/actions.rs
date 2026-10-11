@@ -53,7 +53,16 @@ pub async fn operation(State(s): Shared, UrlPath((id, action)): UrlPath<(String,
         ("merge", "continue") => vec!["commit", "--no-edit"],
         ("merge", "abort") => vec!["merge", "--abort"],
         (_, "skip") if !op.can_skip() => return Err(bad("a merge cannot be skipped")),
-        (kind, "continue" | "abort" | "skip") => vec![kind, if action == "continue" { "--continue" } else if action == "abort" { "--abort" } else { "--skip" }],
+        (kind, "continue" | "abort" | "skip") => vec![
+            kind,
+            if action == "continue" {
+                "--continue"
+            } else if action == "abort" {
+                "--abort"
+            } else {
+                "--skip"
+            },
+        ],
         _ => return Err(bad(format!("unknown action {action}"))),
     };
     net_result(git::run(&r.path, &args, NETWORK_TIMEOUT).await?)
@@ -339,14 +348,28 @@ pub async fn delete_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q)
         return net_result(local_out);
     }
     let remote = remote_or_err(&r.path).await?;
-    remote_cmd(&s, &r, &["push", "--progress", &remote, "--delete", &format!("refs/tags/{name}")], q.job.as_deref()).await
+    remote_cmd(
+        &s,
+        &r,
+        &["push", "--progress", &remote, "--delete", &format!("refs/tags/{name}")],
+        q.job.as_deref(),
+    )
+    .await
 }
 
 pub async fn push_tag(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Query<JobQuery>, Json(b): Json<TagRefBody>) -> ApiResult {
     let r = repo(&s, &id).await?;
     let remote = remote_or_err(&r.path).await?;
     match b.name.as_deref() {
-        Some(name) => remote_cmd(&s, &r, &["push", "--progress", &remote, &format!("refs/tags/{}", valid_ref(name)?)], q.job.as_deref()).await,
+        Some(name) => {
+            remote_cmd(
+                &s,
+                &r,
+                &["push", "--progress", &remote, &format!("refs/tags/{}", valid_ref(name)?)],
+                q.job.as_deref(),
+            )
+            .await
+        }
         None => remote_cmd(&s, &r, &["push", "--progress", &remote, "--tags"], q.job.as_deref()).await,
     }
 }
@@ -375,7 +398,11 @@ pub async fn blob(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Quer
         rev => {
             let base = rev.strip_suffix('^');
             let commit = if rev == "HEAD" { rev } else { valid_sha(base.unwrap_or(rev))? };
-            let spec = if base.is_some() { format!("{commit}^1:{path}") } else { format!("{commit}:{path}") };
+            let spec = if base.is_some() {
+                format!("{commit}^1:{path}")
+            } else {
+                format!("{commit}:{path}")
+            };
             git::blob(&r.path, &spec).await?
         }
     };
@@ -398,7 +425,10 @@ pub async fn blob(State(s): Shared, UrlPath(id): UrlPath<String>, Query(q): Quer
     Ok((
         [
             (axum::http::header::CONTENT_TYPE, ty),
-            (axum::http::header::CONTENT_SECURITY_POLICY, "sandbox; default-src 'none'; style-src 'unsafe-inline'"),
+            (
+                axum::http::header::CONTENT_SECURITY_POLICY,
+                "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+            ),
             (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],
         bytes,
@@ -429,7 +459,10 @@ pub async fn apply_patch(State(s): Shared, UrlPath(id): UrlPath<String>, Json(b)
         args.push("--reverse");
     }
     args.push("-");
-    let extra = git::Extra { stdin: Some(b.patch.into_bytes()), ..Default::default() };
+    let extra = git::Extra {
+        stdin: Some(b.patch.into_bytes()),
+        ..Default::default()
+    };
     net_result(git::run_with(&r.path, &args, LOCAL_TIMEOUT, &extra).await?)
 }
 
@@ -507,7 +540,11 @@ fn parse_remotes(text: &str) -> Vec<RemoteInfo> {
         let idx = match out.iter().position(|r| r.name == name) {
             Some(i) => i,
             None => {
-                out.push(RemoteInfo { name: name.to_string(), fetch_url: String::new(), push_url: String::new() });
+                out.push(RemoteInfo {
+                    name: name.to_string(),
+                    fetch_url: String::new(),
+                    push_url: String::new(),
+                });
                 out.len() - 1
             }
         };
@@ -553,7 +590,12 @@ pub async fn remote_action(State(s): Shared, UrlPath((id, action)): UrlPath<(Str
 }
 
 /// Fetch a single remote, or prune its deleted branches.
-pub async fn remote_network(State(s): Shared, UrlPath((id, action)): UrlPath<(String, String)>, Query(q): Query<JobQuery>, Json(b): Json<RemoteBody>) -> ApiResult {
+pub async fn remote_network(
+    State(s): Shared,
+    UrlPath((id, action)): UrlPath<(String, String)>,
+    Query(q): Query<JobQuery>,
+    Json(b): Json<RemoteBody>,
+) -> ApiResult {
     let r = repo(&s, &id).await?;
     let name = valid_ref(&b.name)?;
     match action.as_str() {
@@ -569,7 +611,9 @@ mod tests {
 
     #[test]
     fn parses_remote_list() {
-        let r = parse_remotes("origin\thttps://a/x.git (fetch)\norigin\tgit@a:x.git (push)\nup\t/path with space/r.git (fetch)\nup\t/path with space/r.git (push)\n");
+        let r = parse_remotes(
+            "origin\thttps://a/x.git (fetch)\norigin\tgit@a:x.git (push)\nup\t/path with space/r.git (fetch)\nup\t/path with space/r.git (push)\n",
+        );
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].fetch_url, "https://a/x.git");
         assert_eq!(r[0].push_url, "git@a:x.git");

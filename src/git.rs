@@ -184,11 +184,7 @@ pub const CANCELLED: &str = "cancelled by user";
 /// Run and return stdout, turning a non-zero exit into an error carrying stderr.
 pub async fn run_ok(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = run(dir, args, LOCAL_TIMEOUT).await?;
-    if out.ok {
-        Ok(out.stdout)
-    } else {
-        Err(error_text(&out))
-    }
+    if out.ok { Ok(out.stdout) } else { Err(error_text(&out)) }
 }
 
 pub fn error_text(out: &GitOutput) -> String {
@@ -266,7 +262,21 @@ pub struct FileCommit {
 
 pub async fn file_history(dir: &Path, path: &str, limit: usize) -> Result<Vec<FileCommit>, String> {
     let max = format!("--max-count={limit}");
-    let text = run_ok(dir, &["log", "--follow", "-M", "--name-only", "--decorate=full", &max, "--format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1f", "--", path]).await?;
+    let text = run_ok(
+        dir,
+        &[
+            "log",
+            "--follow",
+            "-M",
+            "--name-only",
+            "--decorate=full",
+            &max,
+            "--format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1f",
+            "--",
+            path,
+        ],
+    )
+    .await?;
     Ok(text
         .split(RECORD)
         .filter(|r| !r.trim().is_empty())
@@ -311,12 +321,19 @@ pub async fn blame(dir: &Path, path: &str, rev: Option<&str>) -> Result<Blame, S
 }
 
 fn parse_blame(text: &str) -> Blame {
-    let mut blame = Blame { lines: Vec::new(), commits: Default::default() };
+    let mut blame = Blame {
+        lines: Vec::new(),
+        commits: Default::default(),
+    };
     let mut current: Option<(String, u32)> = None;
     for line in text.lines() {
         if let Some(content) = line.strip_prefix('\t') {
             if let Some((sha, n)) = current.take() {
-                blame.lines.push(BlameLine { sha, line: n, text: content.to_string() });
+                blame.lines.push(BlameLine {
+                    sha,
+                    line: n,
+                    text: content.to_string(),
+                });
             }
             continue;
         }
@@ -359,8 +376,17 @@ pub async fn compare_diff(dir: &Path, from: &str, to: &str, path: &str, orig: Op
 
 /// Full commit id for a branch, tag or commit name.
 pub async fn resolve(dir: &Path, name: &str) -> Result<String, String> {
-    let out = run(dir, &["rev-parse", "--verify", "--quiet", "--end-of-options", &format!("{name}^{{commit}}")], LOCAL_TIMEOUT).await?;
-    if out.ok { Ok(out.stdout.trim().to_string()) } else { Err(format!("unknown revision {name}")) }
+    let out = run(
+        dir,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &format!("{name}^{{commit}}")],
+        LOCAL_TIMEOUT,
+    )
+    .await?;
+    if out.ok {
+        Ok(out.stdout.trim().to_string())
+    } else {
+        Err(format!("unknown revision {name}"))
+    }
 }
 
 fn parse_log(text: &str) -> Vec<Commit> {
@@ -393,7 +419,11 @@ fn parse_decorations(d: &str) -> Vec<RefLabel> {
             head_target = Some(target.to_string());
             out.push(label(target, true));
         } else if part == "HEAD" {
-            out.push(RefLabel { name: "HEAD".into(), kind: "head", current: true });
+            out.push(RefLabel {
+                name: "HEAD".into(),
+                kind: "head",
+                current: true,
+            });
         } else if let Some(tag) = part.strip_prefix("tag: ") {
             out.push(label(tag, false));
         } else {
@@ -423,7 +453,11 @@ fn label(full: &str, current: bool) -> RefLabel {
     } else {
         "branch"
     };
-    RefLabel { name: short_ref(full), kind, current }
+    RefLabel {
+        name: short_ref(full),
+        kind,
+        current,
+    }
 }
 
 fn short_ref(full: &str) -> String {
@@ -504,9 +538,21 @@ impl Operation {
 }
 
 pub fn operation(git_dir: &Path) -> Option<Operation> {
-    let read = |p: &str| std::fs::read_to_string(git_dir.join(p)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let read = |p: &str| {
+        std::fs::read_to_string(git_dir.join(p))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
     let num = |p: &str| read(p).and_then(|s| s.parse().ok());
-    let blank = |kind| Operation { kind, head_name: None, onto: None, incoming: None, step: None, total: None };
+    let blank = |kind| Operation {
+        kind,
+        head_name: None,
+        onto: None,
+        incoming: None,
+        step: None,
+        total: None,
+    };
 
     if git_dir.join("rebase-merge").is_dir() {
         return Some(Operation {
@@ -531,7 +577,10 @@ pub fn operation(git_dir: &Path) -> Option<Operation> {
     }
     for (file, kind) in [("MERGE_HEAD", "merge"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert")] {
         if let Some(head) = read(file) {
-            return Some(Operation { incoming: head.lines().next().map(str::to_string), ..blank(kind) });
+            return Some(Operation {
+                incoming: head.lines().next().map(str::to_string),
+                ..blank(kind)
+            });
         }
     }
     None
@@ -666,7 +715,12 @@ pub async fn stashes(dir: &Path) -> Result<Vec<Stash>, String> {
         .filter_map(|line| {
             let f: Vec<&str> = line.split(FIELD).collect();
             let index = f.first()?.strip_prefix("stash@{")?.strip_suffix('}')?.parse().ok()?;
-            Some(Stash { index, sha: f.get(1)?.to_string(), message: f.get(2)?.to_string(), time: f.get(3)?.parse().unwrap_or(0) })
+            Some(Stash {
+                index,
+                sha: f.get(1)?.to_string(),
+                message: f.get(2)?.to_string(),
+                time: f.get(3)?.parse().unwrap_or(0),
+            })
         })
         .collect())
 }
@@ -734,9 +788,17 @@ fn parse_name_status(text: &str) -> Vec<ChangedFile> {
         let Some(first) = it.next() else { break };
         if status.starts_with('R') || status.starts_with('C') {
             let Some(to) = it.next() else { break };
-            out.push(ChangedFile { status: status[..1].to_string(), path: to.to_string(), orig_path: Some(first.to_string()) });
+            out.push(ChangedFile {
+                status: status[..1].to_string(),
+                path: to.to_string(),
+                orig_path: Some(first.to_string()),
+            });
         } else {
-            out.push(ChangedFile { status: status.to_string(), path: first.to_string(), orig_path: None });
+            out.push(ChangedFile {
+                status: status.to_string(),
+                path: first.to_string(),
+                orig_path: None,
+            });
         }
     }
     out
@@ -759,7 +821,11 @@ pub fn truncate_diff(mut s: String) -> String {
 /// Diff of one file inside a commit, against its first parent. `orig` is the old path of a rename.
 pub async fn commit_file_diff(dir: &Path, sha: &str, path: &str, orig: Option<&str>, ignore_ws: bool) -> Result<String, String> {
     let parent = run(dir, &["rev-parse", "--verify", "--quiet", &format!("{sha}^1")], LOCAL_TIMEOUT).await?;
-    let mut args = if parent.ok { vec!["diff", "-M", parent.stdout.trim(), sha] } else { vec!["show", "--format=", "-M", sha] };
+    let mut args = if parent.ok {
+        vec!["diff", "-M", parent.stdout.trim(), sha]
+    } else {
+        vec!["show", "--format=", "-M", sha]
+    };
     if ignore_ws {
         args.push("-w");
     }
@@ -799,7 +865,10 @@ pub async fn blob(dir: &Path, spec: &str) -> Result<Option<Vec<u8>>, String> {
         .stdin(Stdio::null())
         .kill_on_drop(true)
         .output();
-    let out = tokio::time::timeout(LOCAL_TIMEOUT, out).await.map_err(|_| "git cat-file timed out".to_string())?.map_err(|e| e.to_string())?;
+    let out = tokio::time::timeout(LOCAL_TIMEOUT, out)
+        .await
+        .map_err(|_| "git cat-file timed out".to_string())?
+        .map_err(|e| e.to_string())?;
     Ok(out.status.success().then_some(out.stdout))
 }
 
@@ -867,7 +936,14 @@ mod tests {
             r
         }
         fn git(&self, args: &[&str]) -> bool {
-            std::process::Command::new("git").arg("-C").arg(&self.0).args(args).output().unwrap().status.success()
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&self.0)
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success()
         }
         fn commit(&self, file: &str, text: &str, msg: &str) {
             std::fs::write(self.0.join(file), text).unwrap();

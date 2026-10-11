@@ -70,13 +70,25 @@ pub fn layout(commits: Vec<Commit>) -> Graph {
         // 2. Lines coming in from above: every waiting lane converges into the node.
         for &i in &waiting {
             let lane = lanes[i].take().unwrap();
-            segments.push(Segment { x1: i, y1: TOP, x2: col, y2: MID, color: lane.color });
+            segments.push(Segment {
+                x1: i,
+                y1: TOP,
+                x2: col,
+                y2: MID,
+                color: lane.color,
+            });
         }
 
         // 3. Lanes not involved with this commit pass straight through.
         for (i, lane) in lanes.iter().enumerate() {
             if let Some(l) = lane {
-                segments.push(Segment { x1: i, y1: TOP, x2: i, y2: BOTTOM, color: l.color });
+                segments.push(Segment {
+                    x1: i,
+                    y1: TOP,
+                    x2: i,
+                    y2: BOTTOM,
+                    color: l.color,
+                });
             }
         }
 
@@ -90,13 +102,28 @@ pub fn layout(commits: Vec<Commit>) -> Graph {
             } else if let Some(i) = lanes.iter().position(|l| l.as_ref().is_some_and(|l| &l.sha == parent)) {
                 // A merge parent another lane is already heading to: join that lane.
                 let c = lanes[i].as_ref().unwrap().color;
-                segments.push(Segment { x1: col, y1: MID, x2: i, y2: BOTTOM, color: c });
+                segments.push(Segment {
+                    x1: col,
+                    y1: MID,
+                    x2: i,
+                    y2: BOTTOM,
+                    color: c,
+                });
                 continue;
             } else {
                 (free_slot(&mut lanes), new_color(&mut next_color))
             };
-            lanes[slot] = Some(Lane { sha: parent.clone(), color: lane_color });
-            segments.push(Segment { x1: col, y1: MID, x2: slot, y2: BOTTOM, color: lane_color });
+            lanes[slot] = Some(Lane {
+                sha: parent.clone(),
+                color: lane_color,
+            });
+            segments.push(Segment {
+                x1: col,
+                y1: MID,
+                x2: slot,
+                y2: BOTTOM,
+                color: lane_color,
+            });
         }
 
         while matches!(lanes.last(), Some(None)) {
@@ -153,7 +180,13 @@ mod tests {
         assert_eq!(g.rows[2].col, 0);
         assert_eq!(g.rows[3].col, 0);
         // At `a`, the side lane converges back into column 0.
-        assert!(g.rows[3].segments.contains(&Segment { x1: 1, y1: TOP, x2: 0, y2: MID, color: g.rows[1].color }));
+        assert!(g.rows[3].segments.contains(&Segment {
+            x1: 1,
+            y1: TOP,
+            x2: 0,
+            y2: MID,
+            color: g.rows[1].color
+        }));
     }
 
     #[test]
