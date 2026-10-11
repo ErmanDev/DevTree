@@ -79,7 +79,7 @@ test("stage a single line and a hunk, unstage a line, discard a hunk", async ({ 
   const hunk = page.locator(".diff-body .hunk", { has: page.locator("[data-dv='discard-hunk']") }).filter({ hasText: "fn main" }).first();
   await hunk.locator("[data-dv='discard-hunk']").click();
   await page.locator("#dialogOk").click();
-  await expect.poll(() => repo.read("main.rs")).toContain("\n    let v7 = helper_7();");
+  await expect.poll(() => repo.readIfExists("main.rs") ?? "").toContain("\n    let v7 = helper_7();");
 
   // Unstage the add() change from the staged diff.
   await page.locator("#btnCloseDiff").click();

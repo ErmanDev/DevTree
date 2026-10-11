@@ -48,7 +48,12 @@ jobs:
         if: runner.os == 'Linux'
         env:
           SMOKE_SHOTS: tests/e2e/test-results/desktop-smoke
-        run: scripts/desktop-smoke.sh
+        # Ubuntu's AppArmor stops unprivileged programs from creating user namespaces, which
+        # WebKitGTK's sandbox (bubblewrap) needs: the window would stay empty. Allow them on this
+        # throwaway runner.
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          scripts/desktop-smoke.sh
 
       - uses: actions/setup-node@v5
         with:

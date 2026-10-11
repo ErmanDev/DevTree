@@ -59,7 +59,7 @@ class Repo {
     return fs.readFileSync(path.join(this.dir, file), "utf8");
   }
 
-  /** read(), or null while the file doesn't exist (git rewrites files by replacing them). */
+  /** read(), or null while git is rewriting the file: it may briefly not exist, and Windows refuses to open it (EPERM). */
   readIfExists(file) {
     try {
       return this.read(file);
