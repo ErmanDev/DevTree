@@ -24,6 +24,9 @@ function gitEnv(home) {
     GIT_CONFIG_GLOBAL: config,
     GIT_CONFIG_NOSYSTEM: "1", // ignore e.g. Git for Windows' credential manager and autocrlf
     LC_ALL: "C",
+    // The tests poll `git status` while DevTree works; without this it can take index.lock
+    // and make DevTree's own git command fail (seen on Windows CI).
+    GIT_OPTIONAL_LOCKS: "0",
   };
 }
 
