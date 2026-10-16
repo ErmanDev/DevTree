@@ -42,6 +42,7 @@ It runs as one small desktop program (~3 MB release build). The UI is drawn by y
 - **Interactive rebase**: "Interactive rebase from here…" opens an editor where you can reorder commits by dragging and pick / reword / squash / fixup / drop each one. Rewording works even if the rebase pauses for conflicts.
 - **Remotes**: add, rename, change URL, remove, fetch or prune each remote from the sidebar.
 - **Import repos** from a built-in folder browser, or **clone from a URL**.
+- **Open the repo elsewhere**: buttons next to the repository name open its web page (GitHub, GitLab, … worked out from `origin`) in your browser, and its folder in Explorer / Finder / your file manager.
 - Commit filter (`/`), keyboard navigation (`↑/↓` or `j/k`), `r` to refresh, light and dark retro themes.
 - A console that shows every git command run and its output.
 

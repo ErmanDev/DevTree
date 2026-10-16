@@ -185,6 +185,7 @@ fn app(cfg: &Config) -> Router {
         .route("/repos", get(list_repos).post(import_repo))
         .route("/repos/clone", post(clone_repo))
         .route("/repos/{id}", delete(remove_repo))
+        .route("/repos/{id}/reveal", post(reveal_repo))
         .route("/repos/{id}/graph", get(repo_graph))
         .route("/repos/{id}/status", get(repo_status))
         .route("/repos/{id}/branches", get(repo_branches))
@@ -268,14 +269,30 @@ fn open_browser(url: &str) {
     } else {
         &["xdg-open"]
     };
+    let _ = launch(cmd, url.as_ref());
+}
+
+/// Shows a folder in the system file manager (Explorer, Finder, or the desktop's default).
+fn open_folder(dir: &Path) -> std::io::Result<()> {
+    let cmd: &[&str] = if cfg!(target_os = "macos") {
+        &["open"]
+    } else if cfg!(windows) {
+        &["explorer"]
+    } else {
+        &["xdg-open"]
+    };
+    launch(cmd, dir.as_os_str())
+}
+
+fn launch(cmd: &[&str], target: &std::ffi::OsStr) -> std::io::Result<()> {
     let mut command = std::process::Command::new(cmd[0]);
     command
         .args(&cmd[1..])
-        .arg(url)
+        .arg(target)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     git::hide_console_std(&mut command);
-    let _ = command.spawn();
+    command.spawn().map(drop)
 }
 
 // ---------------------------------------------------------------- request guards
@@ -379,6 +396,21 @@ async fn clone_repo(State(s): Shared, Query(q): Query<JobQuery>, Json(b): Json<C
 async fn remove_repo(State(s): Shared, UrlPath(id): UrlPath<String>) -> ApiResult {
     s.store.remove(&id).await?;
     ok(json!({ "removed": id }))
+}
+
+/// Opens the repository's folder on disk. Only paths DevTree already tracks can be opened.
+async fn reveal_repo(State(s): Shared, UrlPath(id): UrlPath<String>) -> ApiResult {
+    let r = repo(&s, &id).await?;
+    if !r.path.is_dir() {
+        return Err(format!("{} no longer exists", r.path.display()).into());
+    }
+    // Explorer only understands backslashes.
+    #[cfg(windows)]
+    let dir = PathBuf::from(r.path.to_string_lossy().replace('/', "\\"));
+    #[cfg(not(windows))]
+    let dir = r.path.clone();
+    open_folder(&dir).map_err(|e| format!("cannot open the file manager: {e}"))?;
+    ok(json!({ "opened": r.path }))
 }
 
 #[derive(Deserialize)]

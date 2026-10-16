@@ -500,6 +500,9 @@ async function openRepo(id) {
   renderRepos();
   $("repoName").textContent = repo.name;
   $("repoName").title = repo.path;
+  $("btnFolder").hidden = false;
+  $("btnFolder").title = `Open ${repo.path}`;
+  $("btnWeb").hidden = true;
   closeDiff();
   $("detail").innerHTML = `<div class="detail-empty">Loading…</div>`;
   state.autoFetchProblem = null;
@@ -530,6 +533,8 @@ async function removeRepo(id) {
 
 function renderEmpty() {
   $("repoName").textContent = "no repository";
+  $("btnWeb").hidden = true;
+  $("btnFolder").hidden = true;
   $("branchPill").hidden = true;
   $("syncPill").hidden = true;
   $("refsSection").hidden = true;
@@ -575,6 +580,7 @@ async function reload() {
   state.remotes = refs.remotes;
   state.remoteInfo = remoteInfo;
   state.stashes = refs.stashes;
+  renderRepoLinks();
   applyStatus(status, true);
   setToolbarEnabled(true);
   renderRefs();
@@ -607,6 +613,32 @@ function renderHeaderStatus() {
   sp.textContent = bits.join(" ");
   sp.title = st.upstream ? `tracking ${st.upstream}` : "no upstream branch";
   renderFetchInfo();
+}
+
+/**
+ * The web page of a remote, e.g. "git@github.com:me/x.git" -> "https://github.com/me/x".
+ * Local paths and other URLs nobody can browse give null.
+ */
+function remoteWebUrl(url) {
+  url = String(url || "").trim();
+  const m = url.match(/^(?:https?|ssh|git):\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+?)(?:\.git)?\/?$/i)
+    || url.match(/^(?:[^@/]+@)?([^/:]+):(?!\/)(.+?)(?:\.git)?\/?$/);
+  if (!m || !m[1].includes(".")) return null;
+  return `https://${m[1].toLowerCase()}/${m[2]}`;
+}
+
+/** The ↗ GitHub / GitLab / … and Folder buttons next to the repository name. */
+function renderRepoLinks() {
+  const remotes = [...state.remoteInfo].sort((a, b) => (b.name === "origin") - (a.name === "origin"));
+  const web = remotes.map((r) => ({ name: r.name, url: remoteWebUrl(r.fetch_url) })).find((r) => r.url);
+  const a = $("btnWeb");
+  a.hidden = !web;
+  if (!web) return;
+  const host = new URL(web.url).hostname.replace(/^www\./, "");
+  const known = { "github.com": "GitHub", "gitlab.com": "GitLab", "bitbucket.org": "Bitbucket", "codeberg.org": "Codeberg" };
+  a.href = web.url;
+  a.title = `Open ${web.url} (${web.name})`;
+  $("btnWebLabel").textContent = known[host] || host;
 }
 
 const hasWip = () => !!(state.status && state.status.files.length);
@@ -2254,6 +2286,7 @@ function wire() {
     autoFetchTick();
   };
   $("fetchInfo").onclick = () => fetchNow($("btnFetch"));
+  $("btnFolder").onclick = () => state.repo && repoApi("POST", "/reveal").catch((e) => toast(e.message, true));
   $("btnAvatars").onclick = async () => {
     state.showAvatars = !state.showAvatars;
     try { localStorage.setItem("devtree.avatars", state.showAvatars ? "on" : "off"); } catch {}

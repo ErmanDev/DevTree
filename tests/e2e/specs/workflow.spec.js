@@ -208,3 +208,25 @@ test("remotes: add, rename, remove", async ({ page, makeRepo, openRepo }) => {
   await page.locator("#dialogOk").click();
   await expect(page.locator("#remoteList li[data-remote]")).toHaveCount(0);
 });
+
+test("header links to the repository's web page and folder", async ({ page, makeRepo, openRepo }) => {
+  const repo = makeRepo();
+  repo.commit("Initial");
+  await openRepo(repo);
+  await expect(page.locator("#btnFolder")).toBeVisible();
+  await expect(page.locator("#btnWeb")).toBeHidden(); // no remote yet
+
+  repo.git("remote", "add", "origin", "git@github.com:someone/demo.git");
+  await page.locator("#btnRefresh").click();
+  await expect(page.locator("#btnWeb")).toHaveText("↗GitHub");
+  await expect(page.locator("#btnWeb")).toHaveAttribute("href", "https://github.com/someone/demo");
+
+  // Don't really open a file manager during tests: just check the request.
+  let revealed = false;
+  await page.route("**/api/repos/*/reveal", (route) => {
+    revealed = true;
+    route.fulfill({ json: { opened: repo.dir } });
+  });
+  await page.locator("#btnFolder").click();
+  await expect.poll(() => revealed).toBe(true);
+});
