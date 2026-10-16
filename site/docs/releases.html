@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Releases · DevTree</title>
+  <meta name="description" content="What's new in each version of DevTree, with downloads and SHA-256 checksums. DevTree updates itself on Windows.">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/site.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/"><b>⎇</b> DevTree<span class="cursor">_</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="/docs/install">Install</a>
+        <a href="/docs/getting-started">Get started</a>
+        <a href="/docs/guide">User guide</a>
+        <a href="/docs/releases" aria-current="page">Releases</a>
+        <a href="/docs/security">Security</a>
+        <a href="/docs/contributing">Contribute</a>
+      </nav>
+      <div class="top-actions">
+        <a class="icon-btn" href="https://github.com/ErmanDev/DevTree">★ <span class="gh-label">GitHub</span></a>
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle light or dark theme">◐</button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu">≡</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page">
+      <h4>ON THIS PAGE</h4>
+      <a href="#updating">Updating</a>
+      <a href="#versions">All versions</a>
+    </nav>
+
+    <article class="article">
+      <h1>Releases</h1>
+      <p class="lede">What's new in each version of DevTree. The newest is <b data-release="version">on GitHub</b><span data-release="date"></span>.</p>
+      <div class="ctas">
+        <a class="btn btn-accent btn-dl" href="https://github.com/ErmanDev/DevTree/releases/latest/download/devtree-windows-x64.exe"><svg class="os-ico" aria-hidden="true"><use href="/img/os.svg#windows"/></svg><span><b>Download for Windows</b><small><span data-release="version-dot"></span>Windows 10 &amp; 11 · 64-bit</small></span></a>
+        <a class="btn" href="/docs/install">Install guide</a>
+      </div>
+
+      <h2 id="updating">Updating</h2>
+      <p>From version 0.1.2 on, DevTree checks for a new version each time it starts. On Windows, click <b>Update now</b> in the alert: DevTree downloads the new version, checks its SHA-256 checksum, replaces itself and restarts. Your repositories and settings are kept. On macOS and Linux, the alert links here; update a source build as described in the <a href="/docs/install#update">install guide</a>.</p>
+      <p>On 0.1.1 or older? Download the new version above and replace your old <code>devtree-windows-x64.exe</code> with it, once. Updates install themselves after that.</p>
+
+      <h2 id="versions">All versions</h2>
+      <div id="releaseList" class="releases" aria-live="polite">
+        <p class="muted">Loading release notes from GitHub… If they don't appear, see <a href="https://github.com/ErmanDev/DevTree/releases">all releases on GitHub</a>.</p>
+      </div>
+
+      <nav class="pager" aria-label="Pages">
+        <a href="/docs/guide">← User guide</a>
+        <a href="/docs/security">Security &amp; privacy →</a>
+      </nav>
+    </article>
+  </div>
+
+  <footer class="foot">
+    <div class="wrap">
+      <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree/blob/main/LICENSE">MIT license</a> · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
+      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/releases">Releases</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+    </div>
+  </footer>
+</body>
+</html>

@@ -23,6 +23,7 @@
         <a href="/docs/install">Install</a>
         <a href="/docs/getting-started">Get started</a>
         <a href="/docs/guide">User guide</a>
+        <a href="/docs/releases">Releases</a>
         <a href="/docs/security">Security</a>
         <a href="/docs/contributing">Contribute</a>
       </nav>
@@ -40,10 +41,11 @@
       <h1>git, with a <span class="dim">retro</span> soul.</h1>
       <p class="lede">DevTree is a fast, lightweight desktop git client in a single ~3&nbsp;MB program. See your whole history as a colorful commit graph, stage exactly the lines you mean, resolve conflicts side by side and tidy up with interactive rebase. No Electron, no account, no telemetry.</p>
       <div class="ctas">
-        <a class="btn btn-accent btn-dl" href="https://github.com/ErmanDev/DevTree/releases/latest/download/devtree-windows-x64.exe"><svg class="os-ico" aria-hidden="true"><use href="/img/os.svg#windows"/></svg><span><b>Download for Windows</b><small>Windows 10 &amp; 11 · 64-bit</small></span></a>
+        <a class="btn btn-accent btn-dl" href="https://github.com/ErmanDev/DevTree/releases/latest/download/devtree-windows-x64.exe"><svg class="os-ico" aria-hidden="true"><use href="/img/os.svg#windows"/></svg><span><b>Download for Windows</b><small><span data-release="version-dot"></span>Windows 10 &amp; 11 · 64-bit</small></span></a>
         <a class="btn" href="/docs/getting-started">▶ Get started</a>
         <a class="btn" href="https://github.com/ErmanDev/DevTree">★ GitHub</a>
       </div>
+      <p class="latest-note" data-release="note" hidden></p>
       <figure class="shot">
         <div class="bar"><i></i><i></i><i></i><span>DevTree — acme-web</span></div>
         <img src="/img/overview.png" width="1440" height="860" alt="DevTree showing a commit graph with author pictures, branch and tag badges, and the details of the selected commit">
@@ -131,6 +133,21 @@
           <h3>Retro, light or dark</h3>
           <p>Phosphor teal and arcade colors, pixel headings and faint scanlines, in a dark CRT or a light paper theme.</p>
         </article>
+        <article class="card">
+          <div class="glyph">⟳</div>
+          <h3>Updates itself</h3>
+          <p>DevTree tells you when a new version is out. On Windows, one click downloads it, checks its checksum and restarts. Nothing to reinstall.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">↗</div>
+          <h3>One click away</h3>
+          <p>Open the repository's GitHub, GitLab or Bitbucket page in your browser, or its folder in Explorer or Finder, right from the header.</p>
+        </article>
+        <article class="card">
+          <div class="glyph">▸</div>
+          <h3>Nothing hidden</h3>
+          <p>A console shows every git command DevTree runs and its output, so you always know what happened to your repository.</p>
+        </article>
       </div>
     </section>
 
@@ -188,7 +205,7 @@
   <footer class="foot">
     <div class="wrap">
       <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree/blob/main/LICENSE">MIT license</a> · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
-      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/releases">Releases</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
     </div>
   </footer>
 </body>
