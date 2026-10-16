@@ -8,6 +8,7 @@ mod graph;
 mod net;
 mod rebase;
 mod store;
+mod update;
 
 use api::{ApiError, ApiResult, AppState, Shared, bad, net_result, ok, repo, valid_ref, valid_sha};
 use axum::{
@@ -123,6 +124,14 @@ fn main() {
         git::set_self_exe(&exe);
     }
     let cfg = parse_args();
+    // An update restarts DevTree the way it was started. A browser tab is already open, and
+    // reloads by itself once the new version answers.
+    let mut restart: Vec<String> = std::env::args().skip(1).collect();
+    if cfg.open == Open::Browser {
+        restart.push("--no-open".into());
+    }
+    update::set_restart_args(restart);
+    update::clean_up();
     #[cfg(feature = "desktop")]
     if cfg.open == Open::Window {
         desktop::prepare();
@@ -155,6 +164,15 @@ fn main() {
 /// Loopback only: this server can run git commands on your machine.
 async fn listen(cfg: &Config) -> tokio::net::TcpListener {
     let addr = SocketAddr::from(([127, 0, 0, 1], cfg.port));
+    // Just updated: the old version may still be letting go of the port.
+    if std::env::var_os(update::RESTARTED_ENV).is_some() {
+        for _ in 0..50 {
+            if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
+                return l;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
     match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
         // A window doesn't need a well-known address: if another program has the port, use any.
@@ -236,6 +254,8 @@ fn app(cfg: &Config) -> Router {
             get(net::list_credentials).post(net::set_credentials).delete(net::forget_credentials),
         )
         .route("/fs", get(browse))
+        .route("/update", get(update::check))
+        .route("/update/install", post(update::install))
         .layer(middleware::from_fn(require_api_header));
 
     Router::new()

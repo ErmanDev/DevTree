@@ -314,7 +314,7 @@ async function explainSsh(auth) {
  * Small form dialog. fields: [{ key, label, type: text|textarea|checkbox|select, value, placeholder, options }]
  * Resolves with { key: value } on OK, or null when cancelled.
  */
-function ask({ title, text = "", fields = [], ok = "OK", danger = false }) {
+function ask({ title, text = "", fields = [], ok = "OK", cancel = "Cancel", danger = false }) {
   return new Promise((resolve) => {
     $("dialogTitle").textContent = title;
     const parts = [];
@@ -336,6 +336,7 @@ function ask({ title, text = "", fields = [], ok = "OK", danger = false }) {
     $("dialogBody").innerHTML = parts.join("");
     const okBtn = $("dialogOk");
     okBtn.textContent = ok;
+    $("dialogCancel").textContent = cancel;
     okBtn.className = "btn " + (danger ? "btn-danger" : "btn-accent");
     $("dialog").hidden = false;
     const first = $("dialogBody").querySelector("input:not([type=checkbox]), textarea, select");
@@ -365,6 +366,43 @@ function ask({ title, text = "", fields = [], ok = "OK", danger = false }) {
 }
 
 const confirmBox = (title, text, ok = "OK", danger = false) => ask({ title, text, ok, danger }).then((v) => v !== null);
+
+// ---------------------------------------------------------------- updates
+
+/** Asks GitHub (through the server) for a newer DevTree, and offers to install it. */
+async function checkForUpdate() {
+  let u;
+  try { u = await api("GET", "/update"); } catch { return; } // offline: try again next start
+  if (!u.available) return;
+  // Don't cover a dialog the user is in the middle of.
+  while (state.closeDialog) await new Promise((r) => setTimeout(r, 1000));
+  const text = u.can_install
+    ? `DevTree ${u.latest} is available (you have ${u.current}).
+
+Update now? DevTree downloads it, restarts and opens where you left off. Nothing to reinstall.`
+    : `DevTree ${u.latest} is available (you have ${u.current}).
+
+Open the download page?`;
+  if (!(await ask({ title: "Update available", text, ok: u.can_install ? "Update now" : "Download", cancel: "Later" }))) return;
+  if (!u.can_install) return void window.open(u.url, "_blank", "noopener");
+  log(`▸ update to DevTree ${u.latest}…`, "cmd");
+  toast(`Downloading DevTree ${u.latest}…`);
+  try {
+    await api("POST", "/update/install");
+  } catch (e) {
+    return fail(e, "update");
+  }
+  toast(`DevTree ${u.latest} installed. Restarting…`);
+  // In a browser tab the page survives the restart: reload once the new version answers.
+  // (The desktop window closes and the new version opens its own.)
+  await new Promise((r) => setTimeout(r, 1500));
+  for (let i = 0; i < 60; i++) {
+    try {
+      if ((await api("GET", "/update")).current !== u.current) return location.reload();
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
 
 // ---------------------------------------------------------------- formatting
 
@@ -2598,4 +2636,5 @@ function wire() {
   } catch (e) {
     fail(e, "start up");
   }
+  setTimeout(checkForUpdate, 2000);
 })();

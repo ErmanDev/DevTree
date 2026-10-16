@@ -43,6 +43,7 @@ It runs as one small desktop program (~3 MB release build). The UI is drawn by y
 - **Remotes**: add, rename, change URL, remove, fetch or prune each remote from the sidebar.
 - **Import repos** from a built-in folder browser, or **clone from a URL**.
 - **Open the repo elsewhere**: buttons next to the repository name open its web page (GitHub, GitLab, … worked out from `origin`) in your browser, and its folder in Explorer / Finder / your file manager.
+- **Updates in place**: when a new version is out, DevTree says so when it starts. On Windows, **Update now** downloads it (checking its SHA-256 checksum), swaps it in and restarts, with nothing to reinstall. Set `DEVTREE_NO_UPDATE=1` to turn the check off.
 - Commit filter (`/`), keyboard navigation (`↑/↓` or `j/k`), `r` to refresh, light and dark retro themes.
 - A console that shows every git command run and its output.
 

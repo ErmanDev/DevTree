@@ -180,7 +180,7 @@
       <p>Then continue with <a href="/docs/getting-started#first-repo">your first repository</a>.</p>
 
       <h2 id="update">Updating</h2>
-      <p><b>Windows download:</b> close DevTree, download the new <code>devtree-windows-x64.exe</code> and replace the old one.</p>
+      <p><b>Windows download:</b> DevTree checks for a new version each time it starts. When one is out, click <b>Update now</b>: DevTree downloads it, checks its SHA-256 checksum, replaces itself and restarts. There's nothing to reinstall. (Versions before 0.1.2 can't do this yet: close DevTree, download the new <code>devtree-windows-x64.exe</code> and replace the old one, once.) If DevTree is in a folder it isn't allowed to change, such as Program Files, the update stops with a message and you replace the file by hand.</p>
       <p><b>Built from source:</b> close DevTree, then in your DevTree folder:</p>
 <pre><code><span class="p">$ </span>git pull
 <span class="p">$ </span>cargo install --path . --force</code></pre>

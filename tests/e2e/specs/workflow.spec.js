@@ -230,3 +230,23 @@ test("header links to the repository's web page and folder", async ({ page, make
   await page.locator("#btnFolder").click();
   await expect.poll(() => revealed).toBe(true);
 });
+
+test("an update alert appears when a new version is out", async ({ page, makeRepo, openRepo }) => {
+  // Development builds never ask GitHub, so pretend it answered.
+  await page.route("**/api/update", (route) =>
+    route.fulfill({ json: { current: "0.1.2", latest: "9.9.9", available: true, can_install: true, url: "https://github.com/ErmanDev/DevTree/releases/tag/v9.9.9" } }));
+  let installs = 0;
+  await page.route("**/api/update/install", (route) => {
+    installs++;
+    route.fulfill({ json: { installed: "9.9.9" } });
+  });
+  const repo = makeRepo();
+  repo.commit("Initial");
+  await openRepo(repo);
+
+  await expect(page.locator("#dialogTitle")).toHaveText("Update available");
+  await expect(page.locator("#dialogBody")).toContainText("DevTree 9.9.9 is available (you have 0.1.2)");
+  await expect(page.locator("#dialogCancel")).toHaveText("Later");
+  await page.locator("#dialogOk").click();
+  await expect.poll(() => installs).toBe(1);
+});
