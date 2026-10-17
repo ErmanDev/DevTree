@@ -20,6 +20,7 @@
         <a href="/docs/install">Install</a>
         <a href="/docs/getting-started">Get started</a>
         <a href="/docs/guide" aria-current="page">User guide</a>
+        <a href="/docs/releases">Releases</a>
         <a href="/docs/security">Security</a>
         <a href="/docs/contributing">Contribute</a>
       </nav>
@@ -48,6 +49,7 @@
       <a href="#pick-revert-reset">Cherry-pick, revert, reset</a>
       <a href="#history-blame-search">History, blame &amp; search</a>
       <a href="#compare">Compare</a>
+      <a href="#updates">Updates</a>
       <a href="#shortcuts">Keyboard shortcuts</a>
     </nav>
 
@@ -58,7 +60,7 @@
       <h2 id="window">The window</h2>
       <figure class="shot"><img src="/img/overview.png" width="1440" height="860" alt="The DevTree window: sidebar on the left, graph in the middle, commit details on the right"></figure>
       <ul>
-        <li><b>Top bar:</b> the repository, the current branch, whether you're ahead (↑) or behind (↓) the remote, and when you last fetched. On the right: <b>Fetch</b>, <b>Pull</b>, <b>Push</b>, <b>Branch</b>, <b>Stash</b>, <b>Pop</b>, refresh, and the light/dark switch.</li>
+        <li><b>Top bar:</b> the repository, buttons to open its web page (<b>↗ GitHub</b>, GitLab, …) and its <b>▤ Folder</b>, the current branch, whether you're ahead (↑) or behind (↓) the remote, and when you last fetched. On the right: <b>Fetch</b>, <b>Pull</b>, <b>Push</b>, <b>Branch</b>, <b>Stash</b>, <b>Pop</b>, refresh, and the light/dark switch.</li>
         <li><b>Sidebar:</b> your repositories, then the local branches, remotes (grouped by remote), tags and stashes of the open one.</li>
         <li><b>Graph</b> in the middle, and the <b>details panel</b> on the right for whatever you select.</li>
         <li><b>Console</b> at the bottom: click it to see every git command DevTree ran and its output.</li>
@@ -225,6 +227,14 @@
         <li>a <b>⇄ SWAP</b> button</li>
       </ul>
 
+      <h2 id="updates">Updates</h2>
+      <p>Each time DevTree starts, it checks whether a newer version is out and, if so, shows an <b>Update available</b> alert:</p>
+      <ul>
+        <li><b>Windows:</b> <b>Update now</b> downloads the new version, checks its SHA-256 checksum, replaces DevTree and restarts it where you left off. <b>Later</b> reminds you next time.</li>
+        <li><b>macOS and Linux:</b> <b>Download</b> opens the release page. Update your source build as described in the <a href="/docs/install#update">install guide</a>.</li>
+      </ul>
+      <p>See what changed in each version on the <a href="/docs/releases">Releases</a> page. To turn the check off, start DevTree with the environment variable <code>DEVTREE_NO_UPDATE=1</code>.</p>
+
       <h2 id="shortcuts">Keyboard shortcuts</h2>
       <table>
         <thead><tr><th>Keys</th><th>Action</th></tr></thead>
@@ -243,7 +253,7 @@
 
       <nav class="pager" aria-label="Pages">
         <a href="/docs/getting-started">← Getting started</a>
-        <a href="/docs/security">Security &amp; privacy →</a>
+        <a href="/docs/releases">Releases →</a>
       </nav>
     </article>
   </div>
@@ -251,7 +261,7 @@
   <footer class="foot">
     <div class="wrap">
       <span>DevTree · an open-source git client · <a href="https://github.com/ErmanDev/DevTree/blob/main/LICENSE">MIT license</a> · <a href="https://github.com/ErmanDev/DevTree">source on GitHub</a></span>
-      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
+      <span><a href="/docs/install">Install</a> · <a href="/docs/getting-started">Docs</a> · <a href="/docs/releases">Releases</a> · <a href="/docs/security">Security &amp; privacy</a> · <a href="/docs/contributing">Contribute</a></span>
     </div>
   </footer>
 </body>
