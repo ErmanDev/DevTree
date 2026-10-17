@@ -28,6 +28,8 @@ use std::sync::Arc;
 use store::Store;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
+/// The page with DevTree's version filled in (shown in the bottom bar).
+static INDEX_PAGE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| INDEX_HTML.replace("__DEVTREE_VERSION__", update::VERSION));
 const APP_JS: &str = include_str!("../web/app.js");
 const DIFF_JS: &str = include_str!("../web/diff.js");
 const STYLE_CSS: &str = include_str!("../web/style.css");
@@ -259,7 +261,7 @@ fn app(cfg: &Config) -> Router {
         .layer(middleware::from_fn(require_api_header));
 
     Router::new()
-        .route("/", get(|| async { asset(INDEX_HTML, "text/html; charset=utf-8") }))
+        .route("/", get(|| async { asset(&INDEX_PAGE, "text/html; charset=utf-8") }))
         .route("/app.js", get(|| async { asset(APP_JS, "text/javascript; charset=utf-8") }))
         .route("/diff.js", get(|| async { asset(DIFF_JS, "text/javascript; charset=utf-8") }))
         .route("/style.css", get(|| async { asset(STYLE_CSS, "text/css; charset=utf-8") }))
