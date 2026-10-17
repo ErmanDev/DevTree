@@ -94,6 +94,7 @@
       <ul>
         <li><code>~/.devtree/repos.json</code> (or your <code>--data-dir</code>): the list of repositories you imported (name and path). Nothing else.</li>
         <li>UI preferences such as the theme, pull mode, auto-fetch interval, diff layout and the last opened repository, in the page's local storage: in <code>~/.devtree/webview</code> for the desktop window, or in your browser.</li>
+        <li><code>~/.devtree/devtree.log</code>: when DevTree started, update steps, and startup errors or crashes, so problems can be diagnosed when there's no console window. It holds versions, process ids and file paths, never repository contents or credentials, and it never leaves your computer. It starts over when it reaches 512 KB.</li>
         <li>During an interactive rebase, <code>.git/devtree-reword.json</code> in that repository holds your new commit messages. It is removed when the rebase ends.</li>
       </ul>
       <p>There is <b>no telemetry</b>, no analytics, no crash reporting and no account.</p>

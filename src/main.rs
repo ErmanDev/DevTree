@@ -5,6 +5,7 @@ mod desktop;
 mod explore;
 mod git;
 mod graph;
+mod logfile;
 mod net;
 mod rebase;
 mod store;
@@ -126,6 +127,8 @@ fn main() {
         git::set_self_exe(&exe);
     }
     let cfg = parse_args();
+    logfile::init(&cfg.data_dir);
+    logfile::line(&format!("DevTree {} starting", update::VERSION));
     // An update restarts DevTree the way it was started. A browser tab is already open, and
     // reloads by itself once the new version answers.
     let mut restart: Vec<String> = std::env::args().skip(1).collect();
@@ -133,11 +136,14 @@ fn main() {
         restart.push("--no-open".into());
     }
     update::set_restart_args(restart);
-    update::clean_up();
     #[cfg(feature = "desktop")]
     if cfg.open == Open::Window {
         desktop::prepare();
     }
+    // Before the server starts: an update's old version may still hold the port and its
+    // window's data. (After `prepare`, so no console window stays open meanwhile.)
+    update::wait_for_old_version();
+    update::clean_up();
     let runtime = tokio::runtime::Runtime::new().expect("failed to start the async runtime");
     let listener = runtime.block_on(listen(&cfg));
     // With --port 0 the OS picks a free port; report the real one (tests rely on this line).
@@ -182,13 +188,13 @@ async fn listen(cfg: &Config) -> tokio::net::TcpListener {
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("cannot listen on 127.0.0.1: {e}");
+                    logfile::error(&format!("cannot listen on 127.0.0.1: {e}"));
                     std::process::exit(1);
                 }
             }
         }
         Err(e) => {
-            eprintln!("cannot listen on {addr}: {e}");
+            logfile::error(&format!("cannot listen on {addr}: {e}"));
             std::process::exit(1);
         }
     }
@@ -258,6 +264,7 @@ fn app(cfg: &Config) -> Router {
         .route("/fs", get(browse))
         .route("/update", get(update::check))
         .route("/update/install", post(update::install))
+        .route("/update/progress", get(update::progress))
         .layer(middleware::from_fn(require_api_header));
 
     Router::new()

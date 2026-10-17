@@ -386,13 +386,24 @@ Open the download page?`;
   if (!(await ask({ title: "Update available", text, ok: u.can_install ? "Update now" : "Download", cancel: "Later" }))) return;
   if (!u.can_install) return void window.open(u.url, "_blank", "noopener");
   log(`▸ update to DevTree ${u.latest}…`, "cmd");
-  toast(`Downloading DevTree ${u.latest}…`);
+  const card = updateCard(`update to v${u.latest}`);
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const p = await api("GET", "/update/progress");
+      if (p.downloading) card.show(p.received, p.total, started);
+    } catch {}
+  }, 500);
   try {
     await api("POST", "/update/install");
   } catch (e) {
+    card.remove();
     return fail(e, "update");
+  } finally {
+    clearInterval(timer);
   }
-  toast(`DevTree ${u.latest} installed. Restarting…`);
+  log(`✓ DevTree ${u.latest} installed, restarting`, "okl");
+  card.phase("Installed. Restarting…");
   // In a browser tab the page survives the restart: reload once the new version answers.
   // (The desktop window closes and the new version opens its own.)
   await new Promise((r) => setTimeout(r, 1500));
@@ -402,6 +413,35 @@ Open the download page?`;
     } catch {}
     await new Promise((r) => setTimeout(r, 1000));
   }
+  card.remove();
+  toast(`DevTree ${u.latest} is installed but didn't start again. Open DevTree yourself.`, true);
+}
+
+/** A progress card (like fetch/pull/push) for downloading an update. */
+function updateCard(title) {
+  const el = document.createElement("div");
+  el.className = "job";
+  el.innerHTML = `<div class="job-head"><span class="job-title">${esc(title)}</span></div>
+    <div class="job-phase">Downloading…</div>
+    <div class="job-bar indeterminate"><div class="job-fill"></div></div>`;
+  $("jobs").appendChild(el);
+  const mb = (n) => (n / 1048576).toFixed(1);
+  const phase = (text, pct = null) => {
+    el.querySelector(".job-phase").textContent = text;
+    el.querySelector(".job-bar").classList.toggle("indeterminate", pct === null);
+    if (pct !== null) el.querySelector(".job-fill").style.width = `${pct}%`;
+  };
+  return {
+    phase,
+    show(received, total, started) {
+      const secs = Math.round((Date.now() - started) / 1000);
+      // Nothing yet: keep the "waiting" animation rather than an empty bar.
+      if (!total || !received) return phase(`Downloading… ${mb(received)} MB · ${secs}s`);
+      const pct = Math.min(100, Math.round((received / total) * 100));
+      phase(`Downloading… ${mb(received)} / ${mb(total)} MB · ${pct}% · ${secs}s`, pct);
+    },
+    remove: () => el.remove(),
+  };
 }
 
 // ---------------------------------------------------------------- formatting

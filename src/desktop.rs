@@ -110,7 +110,7 @@ fn open_external(url: &str) {
 }
 
 fn fail(msg: &str) -> ! {
-    eprintln!("devtree: {msg}");
+    crate::logfile::error(msg);
     eprintln!("Run `devtree --browser` to use DevTree in your web browser instead.");
     std::process::exit(1);
 }

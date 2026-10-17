@@ -69,7 +69,7 @@ Options:
 | flag | default | |
 |---|---|---|
 | `--port <n>` | `7878` | port to listen on (always `127.0.0.1`) |
-| `--data-dir <path>` | `~/.devtree` (or `$DEVTREE_HOME`) | where the list of imported repos is stored |
+| `--data-dir <path>` | `~/.devtree` (or `$DEVTREE_HOME`) | where the list of imported repos and `devtree.log` (startup errors, update steps) are stored |
 | `--clone-dir <path>` | `~/devtree-repos` | default folder for clones |
 | `--browser` | | open in your web browser instead of DevTree's own window |
 | `--no-open` | | open nothing, just serve `http://localhost:7878` |
