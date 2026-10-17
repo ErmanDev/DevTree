@@ -304,11 +304,14 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
     launch(cmd, dir.as_os_str())
 }
 
+/// No standard handle is inherited: started by double-click, DevTree has let go of its console
+/// (see desktop.rs), and Windows refuses to start a program given those dead handles (os error 50).
 fn launch(cmd: &[&str], target: &std::ffi::OsStr) -> std::io::Result<()> {
     let mut command = std::process::Command::new(cmd[0]);
     command
         .args(&cmd[1..])
         .arg(target)
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     git::hide_console_std(&mut command);

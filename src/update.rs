@@ -113,7 +113,12 @@ pub async fn install() -> ApiResult {
     }
 
     let mut cmd = std::process::Command::new(&exe);
-    cmd.args(RESTART_ARGS.get().into_iter().flatten()).env(RESTARTED_ENV, "1");
+    // No inherited handles: they may belong to a console DevTree let go of (see main.rs `launch`).
+    cmd.args(RESTART_ARGS.get().into_iter().flatten())
+        .env(RESTARTED_ENV, "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
     git::hide_console_std(&mut cmd);
     cmd.spawn()
         .map_err(|e| format!("updated, but cannot restart DevTree: {e}. Start it again yourself."))?;
