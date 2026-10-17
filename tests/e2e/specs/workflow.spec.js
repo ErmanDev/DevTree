@@ -250,3 +250,16 @@ test("an update alert appears when a new version is out", async ({ page, makeRep
   await page.locator("#dialogOk").click();
   await expect.poll(() => installs).toBe(1);
 });
+
+test("the bottom bar shows DevTree's version", async ({ page, makeRepo, openRepo }) => {
+  const version = require("fs").readFileSync(require("path").join(__dirname, "../../../Cargo.toml"), "utf8").match(/^version = "(.+)"/m)[1];
+  const repo = makeRepo();
+  repo.commit("Initial");
+  await openRepo(repo);
+  const label = page.locator("#appVersion");
+  await expect(label).toHaveText(`v${version}`);
+  await expect(label).toHaveAttribute("href", `https://github.com/ErmanDev/DevTree/releases/tag/v${version}`);
+  await page.evaluate(() => document.getElementById("appVersion").addEventListener("click", (e) => e.preventDefault()));
+  await label.click();
+  await expect(page.locator("#console")).not.toHaveClass(/open/); // the link doesn't toggle the console
+});

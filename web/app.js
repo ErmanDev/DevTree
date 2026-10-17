@@ -2557,7 +2557,7 @@ function wire() {
   $("diffActions").addEventListener("click", cxClick);
 
   // Console
-  $("consoleHead").onclick = (e) => { if (!e.target.closest("button")) $("console").classList.toggle("open"); };
+  $("consoleHead").onclick = (e) => { if (!e.target.closest("button, a")) $("console").classList.toggle("open"); };
   $("btnClearConsole").onclick = () => { $("consoleBody").innerHTML = ""; $("consoleLast").textContent = ""; };
 
   // Modal

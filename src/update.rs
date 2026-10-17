@@ -159,6 +159,7 @@ async fn curl(args: &[&str], timeout_secs: u64) -> Result<Vec<u8>, String> {
     let mut cmd = tokio::process::Command::new("curl");
     cmd.args(["-fsSL", "--proto", "=https", "--max-time", &timeout_secs.to_string(), "-A", "DevTree"])
         .args(args)
+        .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     git::hide_console_std(cmd.as_std_mut());
     let out = cmd.output().await.map_err(|e| format!("cannot run curl: {e}"))?;

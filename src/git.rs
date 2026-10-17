@@ -213,6 +213,7 @@ async fn kill_tree(child: &mut tokio::process::Child) {
         #[cfg(windows)]
         let killer = hide_console(&mut Command::new("taskkill"))
             .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();

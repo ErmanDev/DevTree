@@ -13,8 +13,12 @@ use tao::{
 };
 use wry::{NewWindowResponse, WebContext, WebViewBuilder};
 
-/// Must run before DevTree starts any other thread (it may set environment variables).
+/// Must run before DevTree starts any other thread (it may set environment variables and
+/// change the standard handles).
 pub fn prepare() {
+    #[cfg(windows)]
+    detach_console();
+
     // WebKitGTK's DMA-BUF renderer shows an empty window on many setups (virtual machines,
     // NVIDIA drivers, remote X). The fallback draws the same page, just with less GPU help.
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -27,9 +31,6 @@ pub fn prepare() {
 /// Opens the window on `url` and runs it on this (the main) thread until it is closed,
 /// then exits the process.
 pub fn run(url: &str, data_dir: &Path) -> ! {
-    #[cfg(windows)]
-    detach_console();
-
     let event_loop = EventLoop::new();
     #[cfg(target_os = "macos")]
     let menu = macos_menu();
@@ -116,17 +117,28 @@ fn fail(msg: &str) -> ! {
 
 /// Started by double-clicking, Windows gives DevTree a console window of its own. Close it;
 /// a console shared with a terminal the user started DevTree from is left alone.
+///
+/// The standard handles still point at the closed console afterwards, and Windows refuses to
+/// start a program that inherits them (os error 50). Clearing them makes programs DevTree starts
+/// get no handle instead.
 #[cfg(windows)]
 fn detach_console() {
     unsafe extern "system" {
         fn GetConsoleProcessList(list: *mut u32, count: u32) -> u32;
         fn FreeConsole() -> i32;
+        fn SetStdHandle(which: u32, handle: *mut std::ffi::c_void) -> i32;
     }
+    const STD_INPUT_HANDLE: u32 = -10i32 as u32;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
     let mut pids = [0u32; 2];
-    // SAFETY: the buffer holds `pids.len()` entries; both calls only affect this process.
+    // SAFETY: the buffer holds `pids.len()` entries; all calls only affect this process, and no
+    // other thread exists yet to use the handles being cleared.
     unsafe {
-        if GetConsoleProcessList(pids.as_mut_ptr(), pids.len() as u32) == 1 {
-            FreeConsole();
+        if GetConsoleProcessList(pids.as_mut_ptr(), pids.len() as u32) == 1 && FreeConsole() != 0 {
+            for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+                SetStdHandle(which, std::ptr::null_mut());
+            }
         }
     }
 }
