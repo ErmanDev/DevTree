@@ -5,12 +5,13 @@
 //! DevTree needs no HTTP or TLS library of its own.
 
 use crate::api::{ApiResult, bad, ok};
-use crate::git;
+use crate::{git, logfile};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 const LATEST: &str = "https://api.github.com/repos/ErmanDev/DevTree/releases/latest";
@@ -18,8 +19,16 @@ const LATEST: &str = "https://api.github.com/repos/ErmanDev/DevTree/releases/lat
 const DOWNLOADS: &str = "https://github.com/ErmanDev/DevTree/releases/download/";
 const ASSET: &str = "devtree-windows-x64.exe";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Set on a restarted DevTree, so it waits for the old one to free the port.
+/// Set on a restarted DevTree to the old one's process id, so it waits for it to exit.
+/// (0.1.4 and older set it to "1": then only the port is retried.)
 pub const RESTARTED_ENV: &str = "DEVTREE_RESTARTED";
+/// How long a restarted DevTree waits for the old one to exit.
+const OLD_EXIT_WAIT: Duration = Duration::from_secs(30);
+
+/// One install at a time (the window and a browser tab could both ask).
+static INSTALLING: AtomicBool = AtomicBool::new(false);
+/// The download in progress: where it's written and how big it will be.
+static DOWNLOAD: Mutex<Option<(PathBuf, u64)>> = Mutex::new(None);
 
 /// Arguments for the restarted program (set once at startup).
 static RESTART_ARGS: OnceLock<Vec<String>> = OnceLock::new();
@@ -50,6 +59,8 @@ struct Release {
 struct Asset {
     name: String,
     browser_download_url: String,
+    #[serde(default)]
+    size: u64,
 }
 
 /// GET /api/update: is a newer version out?
@@ -74,6 +85,29 @@ pub async fn install() -> ApiResult {
     if !can_install() {
         return Err(bad("this copy of DevTree can't update itself; download the new version instead"));
     }
+    if INSTALLING.swap(true, Ordering::SeqCst) {
+        return Err(bad("the update is already being installed"));
+    }
+    let result = install_latest().await;
+    *DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    INSTALLING.store(false, Ordering::SeqCst);
+    if let Err(e) = &result {
+        logfile::line(&format!("update failed: {}", e.message));
+    }
+    result
+}
+
+/// GET /api/update/progress: bytes downloaded so far, while an update downloads.
+pub async fn progress() -> ApiResult {
+    let current = DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let Some((path, total)) = current else {
+        return ok(json!({ "downloading": false }));
+    };
+    let received = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+    ok(json!({ "downloading": true, "received": received, "total": total }))
+}
+
+async fn install_latest() -> ApiResult {
     let r = latest().await?;
     let version = r.tag_name.trim_start_matches('v');
     if !newer(version, VERSION) {
@@ -87,9 +121,13 @@ pub async fn install() -> ApiResult {
             .ok_or_else(|| format!("the release has no {name}"))
     };
     let (exe_url, sum_url) = (url(ASSET)?, url(&format!("{ASSET}.sha256"))?);
+    let size = r.assets.iter().find(|a| a.name == ASSET).map_or(0, |a| a.size);
+    logfile::line(&format!("update: {VERSION} -> {version}, downloading {exe_url}"));
 
     let exe = std::env::current_exe().map_err(|e| format!("cannot find devtree.exe: {e}"))?;
     let download = with_suffix(&exe, ".download");
+    let _ = std::fs::remove_file(&download);
+    *DOWNLOAD.lock().unwrap_or_else(|e| e.into_inner()) = Some((download.clone(), size));
     let expected = String::from_utf8_lossy(&curl(&[&sum_url], 30).await?)
         .split_whitespace()
         .next()
@@ -112,10 +150,11 @@ pub async fn install() -> ApiResult {
         return Err(replace_failed(&download, &e).into());
     }
 
+    logfile::line(&format!("update: installed {version} at {}, restarting", exe.display()));
     let mut cmd = std::process::Command::new(&exe);
     // No inherited handles: they may belong to a console DevTree let go of (see main.rs `launch`).
     cmd.args(RESTART_ARGS.get().into_iter().flatten())
-        .env(RESTARTED_ENV, "1")
+        .env(RESTARTED_ENV, std::process::id().to_string())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -128,6 +167,40 @@ pub async fn install() -> ApiResult {
         std::process::exit(0);
     });
     ok(json!({ "installed": version }))
+}
+
+/// Started by an update: waits (up to 30 s) until the old DevTree has exited, so its port and
+/// its window's browser data are free. Must run before the server starts.
+pub fn wait_for_old_version() {
+    let Some(value) = std::env::var_os(RESTARTED_ENV) else { return };
+    let pid = value.to_str().and_then(|v| v.parse::<u32>().ok()).filter(|&p| p > 1);
+    logfile::line(&format!(
+        "started by an update (old process {})",
+        pid.map_or("unknown".into(), |p| p.to_string())
+    ));
+    #[cfg(windows)]
+    if let Some(pid) = pid {
+        unsafe extern "system" {
+            fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut std::ffi::c_void;
+            fn WaitForSingleObject(handle: *mut std::ffi::c_void, ms: u32) -> u32;
+            fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+        }
+        const SYNCHRONIZE: u32 = 0x0010_0000;
+        const WAIT_TIMEOUT: u32 = 0x102;
+        // SAFETY: the handle is only used here and closed before returning. A null handle means
+        // the process is already gone.
+        unsafe {
+            let handle = OpenProcess(SYNCHRONIZE, 0, pid);
+            if !handle.is_null() {
+                if WaitForSingleObject(handle, OLD_EXIT_WAIT.as_millis() as u32) == WAIT_TIMEOUT {
+                    logfile::line(&format!("the old process {pid} is still running after 30 s; starting anyway"));
+                }
+                CloseHandle(handle);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (pid, OLD_EXIT_WAIT);
 }
 
 /// Removes the program left behind by the last update. Runs at startup.

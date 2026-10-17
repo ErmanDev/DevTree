@@ -236,10 +236,13 @@ test("an update alert appears when a new version is out", async ({ page, makeRep
   await page.route("**/api/update", (route) =>
     route.fulfill({ json: { current: "0.1.2", latest: "9.9.9", available: true, can_install: true, url: "https://github.com/ErmanDev/DevTree/releases/tag/v9.9.9" } }));
   let installs = 0;
+  let finish;
   await page.route("**/api/update/install", (route) => {
     installs++;
-    route.fulfill({ json: { installed: "9.9.9" } });
+    finish = () => route.fulfill({ json: { installed: "9.9.9" } });
   });
+  await page.route("**/api/update/progress", (route) =>
+    route.fulfill({ json: { downloading: true, received: 1048576, total: 4194304 } }));
   const repo = makeRepo();
   repo.commit("Initial");
   await openRepo(repo);
@@ -249,6 +252,10 @@ test("an update alert appears when a new version is out", async ({ page, makeRep
   await expect(page.locator("#dialogCancel")).toHaveText("Later");
   await page.locator("#dialogOk").click();
   await expect.poll(() => installs).toBe(1);
+  const card = page.locator("#jobs .job", { hasText: "update to v9.9.9" });
+  await expect(card.locator(".job-phase")).toContainText("1.0 / 4.0 MB · 25%");
+  finish();
+  await expect(card.locator(".job-phase")).toHaveText("Installed. Restarting…");
 });
 
 test("the bottom bar shows DevTree's version", async ({ page, makeRepo, openRepo }) => {
