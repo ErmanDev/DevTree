@@ -55,6 +55,65 @@
   --scan: transparent;
 }
 
+/* Claude: warm ivory paper with a terracotta accent. */
+:root[data-theme="claude"] {
+  --bg: #faf9f5;
+  --bg-2: #f3f1ea;
+  --panel: #ece9df;
+  --line: #d6d2c4;
+  --line-soft: #e5e2d7;
+  --text: #1f1e1d;
+  --muted: #5e5d59;
+  --faint: #8d8b82;
+  --accent: #c15f3c;
+  --accent-ink: #fffdf8;
+  --accent-2: #9c6b16;
+  --hover: #efece3;
+  --select: #f4e1d7;
+  --shadow: #3d3929;
+  --blue: #3f6fb0;
+  --pink: #b8457a;
+  --add: #4f7d3a;
+  --add-bg: rgba(79, 125, 58, .12);
+  --del: #b53b32;
+  --del-bg: rgba(181, 59, 50, .1);
+  --scan: transparent;
+}
+
+/* Claude dark: warm charcoal with a coral accent. */
+:root[data-theme="claude-dark"] {
+  --bg: #1f1e1d;
+  --bg-2: #262624;
+  --panel: #30302e;
+  --line: #45443f;
+  --line-soft: #34332f;
+  --text: #f5f4ed;
+  --muted: #b7b5a9;
+  --faint: #85837a;
+  --accent: #d97757;
+  --accent-ink: #1a1918;
+  --accent-2: #e5b567;
+  --hover: #2b2a27;
+  --select: #45302a;
+  --shadow: #121211;
+  --blue: #7aa7e0;
+  --pink: #e57a9d;
+  --add: #8fbf7a;
+  --add-bg: rgba(143, 191, 122, .12);
+  --del: #e0705f;
+  --del-bg: rgba(224, 112, 95, .12);
+  --scan: transparent;
+}
+
+.menu button .swatch {
+  display: inline-block;
+  width: 10px; height: 10px;
+  margin-right: 8px;
+  border: 1px solid var(--shadow);
+  background: linear-gradient(135deg, var(--sw-bg) 50%, var(--sw-accent) 50%);
+  vertical-align: -1px;
+}
+
 * { box-sizing: border-box; }
 
 html, body { height: 100%; margin: 0; }
@@ -865,3 +924,4 @@ select, .search-mode, .rb-list select {
 }
 select:focus { border-color: var(--accent); outline: none; }
 .dialog-body select { font: inherit; padding: 6px 22px 6px 8px; }
+.theme-pick .btn:first-child { border-radius: var(--radius); }
