@@ -12,7 +12,18 @@ const PAGE = 1000;
 const LANES = ["#2ec4b6", "#ffd166", "#ef476f", "#5aa9e6", "#7bd88f", "#b392f0", "#4cc9f0", "#f78fb3", "#c3e88d", "#ffa94d"];
 // Deeper versions of the same hues, readable on the light theme's pale background.
 const LANES_LIGHT = ["#0c8478", "#9a6b00", "#c2185b", "#1f6aa5", "#2f7d3b", "#7b4fc9", "#0a7fa8", "#b8457a", "#5c8a00", "#b85c00"];
-const laneColor = (i) => (document.documentElement.dataset.theme === "light" ? LANES_LIGHT : LANES)[i % LANES.length];
+// Claude themes lead with terracotta / coral.
+const LANES_CLAUDE = ["#c15f3c", "#9c6b16", "#3f6fb0", "#4f7d3a", "#8a5cb8", "#b8457a", "#2a7f86", "#a65d1a", "#5c7a20", "#6b6a63"];
+const LANES_CLAUDE_DARK = ["#d97757", "#e5b567", "#7aa7e0", "#8fbf7a", "#b392f0", "#e57a9d", "#6cc3c7", "#f0a36b", "#c3d88d", "#bdbab0"];
+// Color themes: id → label, lane palette and menu swatch (background, accent).
+const THEMES = {
+  dark: { label: "Retro CRT (dark)", lanes: LANES, swatch: ["#0d1317", "#2ec4b6"] },
+  light: { label: "Retro CRT (light)", lanes: LANES_LIGHT, swatch: ["#eef3ec", "#0c8478"] },
+  claude: { label: "Claude (light)", lanes: LANES_CLAUDE, swatch: ["#faf9f5", "#c15f3c"] },
+  "claude-dark": { label: "Claude (dark)", lanes: LANES_CLAUDE_DARK, swatch: ["#1f1e1d", "#d97757"] },
+};
+const currentTheme = () => THEMES[document.documentElement.dataset.theme] || THEMES.dark;
+const laneColor = (i) => currentTheme().lanes[i % LANES.length];
 const DRAG_TYPE = "application/x-devtree-ref";
 
 const state = {
@@ -270,6 +281,12 @@ function renderFetchMenu() {
   const opt = (m) => `<button data-auto="${m}"><span class="tick">${state.autoFetch === m ? "✓" : ""}</span>${m ? `every ${m} minute${m === 1 ? "" : "s"}` : "off"}</button>`;
   $("fetchMenu").innerHTML = `<button data-auto="now"><span class="tick">⟳</span>Fetch now</button><hr>
     <div class="menu-label">AUTO-FETCH</div>${AUTO_FETCH_CHOICES.map(opt).join("")}`;
+}
+
+function renderThemeMenu() {
+  const cur = document.documentElement.dataset.theme;
+  $("themeMenu").innerHTML = `<div class="menu-label">THEME</div>` + Object.entries(THEMES).map(([id, t]) =>
+    `<button data-theme="${id}"><span class="tick">${cur === id ? "✓" : ""}</span><span class="swatch" style="--sw-bg:${t.swatch[0]};--sw-accent:${t.swatch[1]}"></span>${t.label}</button>`).join("");
 }
 
 // ---------------------------------------------------------------- sign-in
@@ -2346,10 +2363,11 @@ function wire() {
   $("btnStash").onclick = (e) => stashSave(e.currentTarget);
   $("btnPop").onclick = (e) => state.stashes.length && stashAction(state.stashes[0].index, "pop", e.currentTarget);
   $("btnRefresh").onclick = (e) => run(e.currentTarget, "refresh", async () => {}, { refresh: true });
-  $("btnPullMode").onclick = (e) => { e.stopPropagation(); $("fetchMenu").hidden = true; $("pullMenu").hidden = !$("pullMenu").hidden; };
+  $("btnPullMode").onclick = (e) => { e.stopPropagation(); $("fetchMenu").hidden = true; $("themeMenu").hidden = true; $("pullMenu").hidden = !$("pullMenu").hidden; };
   $("btnFetchMode").onclick = (e) => {
     e.stopPropagation();
     $("pullMenu").hidden = true;
+    $("themeMenu").hidden = true;
     renderFetchMenu();
     $("fetchMenu").hidden = !$("fetchMenu").hidden;
   };
@@ -2383,10 +2401,19 @@ function wire() {
     $("pullMenu").hidden = true;
     $("btnPull").click();
   };
-  $("btnTheme").onclick = () => {
-    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("devtree.theme", next); } catch {}
+  $("btnTheme").onclick = (e) => {
+    e.stopPropagation();
+    $("pullMenu").hidden = true;
+    $("fetchMenu").hidden = true;
+    renderThemeMenu();
+    $("themeMenu").hidden = !$("themeMenu").hidden;
+  };
+  $("themeMenu").onclick = (e) => {
+    const b = e.target.closest("button[data-theme]");
+    if (!b) return;
+    $("themeMenu").hidden = true;
+    document.documentElement.dataset.theme = b.dataset.theme;
+    try { localStorage.setItem("devtree.theme", b.dataset.theme); } catch {}
     renderGraph(); // lane colours depend on the theme
   };
   $("opBanner").onclick = (e) => {
@@ -2623,13 +2650,14 @@ function wire() {
   // Global
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#ctxMenu")) $("ctxMenu").hidden = true;
-    if (!e.target.closest(".split")) { $("pullMenu").hidden = true; $("fetchMenu").hidden = true; }
+    if (!e.target.closest(".split")) { $("pullMenu").hidden = true; $("fetchMenu").hidden = true; $("themeMenu").hidden = true; }
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       $("ctxMenu").hidden = true;
       $("pullMenu").hidden = true;
       $("fetchMenu").hidden = true;
+      $("themeMenu").hidden = true;
       if (state.closeDialog) state.closeDialog();
       else if (!$("rebaseModal").hidden) closeRebase();
       else if (!$("modal").hidden) closeModal();
@@ -2658,7 +2686,7 @@ function wire() {
 (async function boot() {
   try {
     const theme = localStorage.getItem("devtree.theme");
-    if (theme) document.documentElement.dataset.theme = theme;
+    if (theme && THEMES[theme]) document.documentElement.dataset.theme = theme;
     state.pullMode = localStorage.getItem("devtree.pullMode") || "merge";
     state.diffSplit = !!localStorage.getItem("devtree.diffSplit");
     state.showAvatars = localStorage.getItem("devtree.avatars") !== "off";
